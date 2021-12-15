@@ -61,9 +61,10 @@ class LabbeBot(commands.Bot):
 
     async def on_ready(self):
         self.client_id = (await self.application_info()).id
-        print("You are now live in the following guilds: \n")
+        print("\nYou are now live in the following guilds: \n")
         async for guild in self.fetch_guilds(limit=5):
             print(f'{guild.name}(id: {guild.id})')
+        print(" ")
 
     async def prefix(self, bot, message):
         return commands.when_mentioned_or(PREFIX)(bot, message)
