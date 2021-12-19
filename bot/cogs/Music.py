@@ -15,10 +15,10 @@ URL_REGEX = r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^
 LYRICS_URL = "https://some-random-api.ml/lyrics?title="
 OPTIONS = {
     "1️⃣": 0,
-    "2⃣": 1,
-    "3⃣": 2,
-    "4⃣": 3,
-    "5⃣": 4,
+    "2️⃣": 1,
+    "3️⃣": 2,
+    "4️⃣": 3,
+    "5️⃣": 4,
 }
 
 
@@ -124,7 +124,14 @@ class Queue:
 
     @property
     def length(self):
-        return len(self._queue)
+        return len(self.upcoming)
+
+    @property
+    def tracks_length(self):
+        len = self.current_track.length
+        for track in self.upcoming:
+            len += track.length
+        return len
 
     def add(self, *args):
         self._queue.extend(args)
@@ -214,29 +221,28 @@ class Player(wavelink.Player):
             embed = discord.Embed()
             embed.title = "Playlist"
             embed.description = "\n".join(
-                f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str(t.length%60).zfill(2)})" for i, t in enumerate(tracks.tracks))
-            embed.colour = ctx.author.colour
-            embed.timestamp = dt.datetime.utcnow()
+                f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})" for i, t in enumerate(tracks.tracks))
             embed.set_author(name="Query Results")
             embed.set_footer(
                 text=f"Added by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
-            await ctx.message.reply(embed=embed)
+            embed.colour = ctx.author.colour
+            embed.timestamp = dt.datetime.utcnow()
+            await ctx.send(embed=embed)
             await ctx.message.delete()
         else:
-            self.queue.add(tracks[0])
             print(tracks[0].title)
+            self.queue.add(tracks[0])
             embed = discord.Embed()
             if self.queue.length == 1:
                 embed.set_author(name="Now playing")
-                embed.description = f":notes: [{tracks[0].title}]({tracks[0].uri}) "
             else:
                 embed.set_author(name="Added to queue")
-                embed.description = f":notes: [{tracks[0].title}]({tracks[0].uri}) "
+            embed.description = f":notes: [{tracks[0].title}]({tracks[0].uri}) ({tracks[0].length//60000}:{str((tracks[0].length//1000)%60).zfill(2)})"
             embed.set_footer(
                 text=f"By {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
             embed.colour = ctx.author.colour
             embed.timestamp = dt.datetime.utcnow()
-            await ctx.message.reply(embed=embed)
+            await ctx.send(embed=embed, delete_after=(self.queue.tracks_length-self.position)//1000)
             await ctx.message.delete()
 
         if not self.is_playing and not self.queue.is_empty:
@@ -254,7 +260,7 @@ class Player(wavelink.Player):
             title="Choose a song",
             description=(
                 "\n".join(
-                    f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str(t.length%60).zfill(2)})" for i, t in enumerate(tracks[:5]))
+                    f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})" for i, t in enumerate(tracks[:5]))
             ),
             colour=ctx.author.colour,
             timestamp=dt.datetime.utcnow()
@@ -360,8 +366,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
     async def connect_command(self, ctx, *, channel: t.Optional[discord.VoiceChannel]):
         player = self.get_player(ctx)
         channel = await player.connect(ctx, channel)
-        await ctx.message.reply(f"Connected to {channel.name}. ")
-        await ctx.message.delete()
+        await ctx.message.add_reaction("👌")
 
     @connect_command.error
     async def connect_command_error(self, ctx, error):
@@ -381,13 +386,14 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise NoVoiceChannel
 
         await player.teardown()
-        await ctx.message.reply("Disconnected from VC. ")
-        await ctx.message.delete()
+        await ctx.message.add_reaction("👌")
 
     @disconnect_command.error
     async def disconnect_command_error(self, ctx, err):
         if isinstance(err, NoVoiceChannel):
             await ctx.message.reply("Not connected to a voice channel. ")
+        if isinstance(err, commands.EmojiNotFound):
+            await ctx.message.reply("not found. ")
         await ctx.message.delete()
 
     # Stop
@@ -396,18 +402,22 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
     async def stop_command(self, ctx):
         player = self.get_player(ctx)
 
+        if not player.is_connected:
+            raise NoVoiceChannel
+
         if not player.is_playing and not player.queue.upcoming:
             raise NothingPlaying
 
         player.queue.empty()
         await player.stop()
-        await ctx.reply("Stopped the player and cleared the queue. ")
-        await ctx.message.delete()
+        await ctx.message.add_reaction("👌")
 
     @stop_command.error
     async def stop_command_error(self, ctx, err):
         if isinstance(err, NothingPlaying):
             await ctx.message.reply("Nothing is playing. ")
+        if isinstance(err, NoVoiceChannel):
+            await ctx.message.reply("Not connected to a voice channel. ")
         await ctx.message.delete()
 
     # Play
@@ -459,6 +469,18 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             tracks.append(track)
             await player.add_tracks(ctx, tracks)
 
+    @search_command.error
+    async def search_command_error(self, ctx, err):
+        if isinstance(err, NoTracksFound):
+            await ctx.message.reply("Could not find a song. ")
+        if isinstance(err, AlreadyConnectedToChannel):
+            await ctx.message.reply("I am already connected to a voice channel. :slight_smile: ")
+        elif isinstance(err, NoVoiceChannel):
+            await ctx.message.reply("You need to be connected to a voice channel to play music. ")
+        elif isinstance(err, NoSongProvided):
+            await ctx.message.reply("No song is was provided")
+        await ctx.message.delete()
+
     # Queue
 
     @commands.command(name="queue", aliases=["q"], help="Displays the queue. - {q}")
@@ -504,7 +526,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             embed.add_field(
                 name="Next up",
                 value="\n".join(
-                    f"**{i+2}.** [{t.title}]({t.uri}) ({t.length//60000}:{str(t.length%60).zfill(2)})" for i, t in enumerate(upcoming[:show-1])),
+                    f"**{i+2}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})" for i, t in enumerate(upcoming[:show-1])),
                 inline=False
             )
 
@@ -569,11 +591,10 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         if not player.is_paused:
             await player.set_pause(True)
-            await ctx.reply("⏯️ Song is paused. ")
+            await ctx.message.add_reaction("⏸")
         else:
             await player.set_pause(False)
-            await ctx.reply("⏯️ Song has resumed. ")
-        await ctx.message.delete()
+            await ctx.message.add_reaction("▶")
 
     @pause_command.error
     async def pause_command_error(self, ctx, err):
@@ -592,11 +613,10 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         if not player.is_paused:
             await player.set_pause(True)
-            await ctx.reply("⏯️ Song is paused. ")
+            await ctx.message.add_reaction("⏸")
         else:
             await player.set_pause(False)
-            await ctx.reply("⏯️ Song has resumed. ")
-        await ctx.message.delete()
+            await ctx.message.add_reaction("▶")
 
     @resume_command.error
     async def resume_command_error(self, ctx, err):
@@ -617,8 +637,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise QueueIsEmpty
 
         await player.stop()
-        await ctx.message.reply("Skipping song...")
-        await ctx.message.delete()
+        await ctx.message.add_reaction("⏭")
 
     @next_command.error
     async def next_command_error(self, ctx, err):
@@ -649,8 +668,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         else:
             player.queue.position -= 1
             await player.start_playback()
-        await ctx.message.reply("Playing previous song...")
-        await ctx.message.delete()
+        await ctx.message.add_reaction("⏮")
 
     @previous_command.error
     async def previous_command_error(self, ctx, err):
@@ -672,8 +690,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise QueueIsEmpty
 
         player.queue.shuffle()
-        await ctx.message.reply("Shuffled the queue. ")
-        await ctx.message.delete()
+        await ctx.message.add_reaction("🔀")
 
     @shuffle_command.error
     async def shuffle_command_error(self, ctx, err):
@@ -691,8 +708,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise NoVoiceChannel
 
         player.queue.update_repeat_mode()
-        await ctx.message.reply(f"The repeat mode has been updated.")
-        await ctx.message.delete()
+        await ctx.message.add_reaction("🔁")
 
     @repeat_command.error
     async def repeat_command_error(self, ctx, err):
@@ -710,7 +726,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise NothingPlaying
 
         await player.seek(0)
-        await ctx.message.reply("Track restarted.")
+        await ctx.message.add_reaction("⏪")
 
     @restart_command.error
     async def restart_command_error(self, ctx, err):
@@ -730,8 +746,11 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         if not position.isdigit():
             raise InvalidTimeString
 
-        await player.seek(int(position) * 1000)
-        await ctx.message.reply(f"Seeked to {position} seconds into the song. ")
+        if player.queue.current_track > int(position):
+            await player.seek(int(position) * 1000)
+            await ctx.message.reply(f"Seeked to {position} seconds into the song. ")
+        else:
+            await ctx.message.reply("That's too long into the song. ")
         await ctx.message.delete()
 
     @seek_command.error
@@ -765,7 +784,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
                 raise TooHighVolume
 
             await player.set_volume(int(value))
-            await ctx.message.reply(f"Volume set to {value}%. ")
+            await ctx.message.add_reaction("👌")
             await ctx.message.delete()
 
     @volume_command.error
@@ -836,7 +855,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise QueueIsEmpty
 
         player.queue.empty()
-        await ctx.message.reply("Queue is cleared. ")
+        await ctx.message.add_reaction("👌")
         await ctx.message.delete()
 
     @clear_command.error
@@ -876,7 +895,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         player.queue.move(index, dest)
 
-        await ctx.message.reply(f"Moved {player.queue.get(dest)} to {dest+1}. ")
+        await ctx.message.reply(content=f"Moved {player.queue.get(dest)} to {dest+1}. ", delete_after=300)
         await ctx.message.delete()
 
     @move_command.error
@@ -918,7 +937,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         player.queue.remove(index)
 
-        await ctx.message.reply(f"Removed {title} from the queue. ")
+        await ctx.message.reply(content=f"Removed {title} from the queue. ", delete_after=300)
         await ctx.message.delete()
 
     @remove_command.error

@@ -3,6 +3,10 @@ import discord
 import typing as t
 
 
+class NoVoiceChannel(commands.CommandError):
+    pass
+
+
 class UsefulCommands(commands.Cog):
 
     # --------------------
@@ -49,19 +53,23 @@ class UsefulCommands(commands.Cog):
     @commands.command(name="bonkmonk", help="Bonks the Monks. ")
     @commands.has_role("bonkers")
     async def bonkmonk_command(self, ctx):
-        if ctx.author.voice.channel is None:
-            await ctx.message.reply("You need to be in a voice channel to use this command")
+        if ctx.author.voice is None:
+            raise NoVoiceChannel
 
         ch = None
         for channel in ctx.author.guild.voice_channels:
             if channel.id == 419111668803698699:
                 ch = channel
 
+        message = None
         for member in ctx.author.voice.channel.members:
             if member.id == 183521952210616320:
                 await member.move_to(channel=ch, reason="Bonk")
-                await ctx.send(content=f"You just got bonked, <@{183521952210616320}>")
+                message = await ctx.send(content=f"You just got bonked, <@{183521952210616320}>")
                 await ctx.send(content="https://tenor.com/view/bonk-gif-18805247")
+
+        if message is None:
+            await ctx.send(f"Psst <@{183521952210616320}>, <@{ctx.author.id}> tried to bonk you. ")
 
         await ctx.message.delete()
 
@@ -71,6 +79,8 @@ class UsefulCommands(commands.Cog):
             await ctx.message.reply("You do not have the correct role for this command.")
         if isinstance(error, commands.errors.MissingPermissions):
             await ctx.message.reply("You do not have the permission to use bonkmonk.")
+        if isinstance(error, NoVoiceChannel):
+            await ctx.message.reply("You need to be in a voice channel to bonk the monk. ")
         await ctx.message.delete()
 
 
