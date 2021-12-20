@@ -6,8 +6,6 @@ from discord.ext import commands
 
 PREFIX = "-"
 
-YT_LINK = "https://www.youtube.com/results?search_query="
-
 # --------------------
 #
 #         Bot

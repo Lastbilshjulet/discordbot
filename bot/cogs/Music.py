@@ -218,6 +218,7 @@ class Player(wavelink.Player):
         self.text_channel = ctx.message.channel
         if isinstance(tracks, wavelink.TrackPlaylist):
             self.queue.add(*tracks.tracks)
+            print(*tracks.tracks.title)
             embed = discord.Embed()
             embed.title = "Playlist"
             embed.description = "\n".join(
@@ -323,7 +324,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         else:
             await payload.player.advance()
             if not payload.player.queue.current_track:
-                await payload.player.text_channel.send("The queue is empty, play something new :rage:")
+                await payload.player.text_channel.send(content="The queue is empty, play something new :rage:", delete_after=180)
 
     async def cog_check(self, ctx):
         if isinstance(ctx.channel, discord.DMChannel):
@@ -366,14 +367,17 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
     async def connect_command(self, ctx, *, channel: t.Optional[discord.VoiceChannel]):
         player = self.get_player(ctx)
         channel = await player.connect(ctx, channel)
-        await ctx.message.add_reaction("👌")
+        await ctx.message.reply(content=f"Connected to {channel.name}. ", delete_after=300)
+        await ctx.message.delete()
 
     @connect_command.error
     async def connect_command_error(self, ctx, error):
+        message = "Error. "
         if isinstance(error, AlreadyConnectedToChannel):
-            await ctx.message.reply("I am already connected to a voice channel. :slight_smile: ")
+            message = "I am already connected to a voice channel. :slight_smile: "
         elif isinstance(error, NoVoiceChannel):
-            await ctx.message.reply("You need to be connected to a voice channel to play music. ")
+            message = "You need to be connected to a voice channel to play music. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Disconnect
@@ -386,14 +390,15 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise NoVoiceChannel
 
         await player.teardown()
-        await ctx.message.add_reaction("👌")
+        await ctx.message.reply(content="Disconnected. ", delete_after=300)
+        await ctx.message.delete()
 
     @disconnect_command.error
     async def disconnect_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NoVoiceChannel):
-            await ctx.message.reply("Not connected to a voice channel. ")
-        if isinstance(err, commands.EmojiNotFound):
-            await ctx.message.reply("not found. ")
+            message = "Not connected to a voice channel. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Stop
@@ -410,14 +415,17 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         player.queue.empty()
         await player.stop()
-        await ctx.message.add_reaction("👌")
+        await ctx.message.reply(content="Stopped the player and cleared the queue. ", delete_after=300)
+        await ctx.message.delete()
 
     @stop_command.error
     async def stop_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is playing. ")
+            message = "Nothing is playing. "
         if isinstance(err, NoVoiceChannel):
-            await ctx.message.reply("Not connected to a voice channel. ")
+            message = "Not connected to a voice channel. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Play
@@ -443,14 +451,16 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
     @play_command.error
     async def play_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NoTracksFound):
-            await ctx.message.reply("Could not find a song. ")
+            message = "Could not find a song. "
         if isinstance(err, AlreadyConnectedToChannel):
-            await ctx.message.reply("I am already connected to a voice channel. :slight_smile: ")
+            message = "I am already connected to a voice channel. :slight_smile: "
         elif isinstance(err, NoVoiceChannel):
-            await ctx.message.reply("You need to be connected to a voice channel to play music. ")
+            message = "You need to be connected to a voice channel to play music. "
         elif isinstance(err, NoSongProvided):
-            await ctx.message.reply("No song is was provided")
+            message = "No song is was provided"
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Search
@@ -471,14 +481,16 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
     @search_command.error
     async def search_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NoTracksFound):
-            await ctx.message.reply("Could not find a song. ")
+            message = "Could not find a song. "
         if isinstance(err, AlreadyConnectedToChannel):
-            await ctx.message.reply("I am already connected to a voice channel. :slight_smile: ")
+            message = "I am already connected to a voice channel. :slight_smile: "
         elif isinstance(err, NoVoiceChannel):
-            await ctx.message.reply("You need to be connected to a voice channel to play music. ")
+            message = "You need to be connected to a voice channel to play music. "
         elif isinstance(err, NoSongProvided):
-            await ctx.message.reply("No song is was provided")
+            message = "No song is was provided"
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Queue
@@ -530,15 +542,17 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
                 inline=False
             )
 
-        await ctx.message.reply(embed=embed)
+        await ctx.message.reply(embed=embed, delete_after=600)
         await ctx.message.delete()
 
     @queue_command.error
     async def queue_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, QueueIsEmpty):
-            await ctx.message.reply("The queue is currently empty. ")
+            message = "The queue is currently empty. "
         if isinstance(err, NotDigit):
-            await ctx.message.reply("The value must be a digit. ")
+            message = "The value must be a digit. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Nowplaying
@@ -559,7 +573,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         embed.set_footer(
             text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
         embed.add_field(name="Track title",
-                        value=player.queue.current_track.title, inline=False)
+                        value=f"[{player.queue.current_track.title}]({player.queue.current_track.uri})", inline=False)
         embed.add_field(
             name="Artist", value=player.queue.current_track.author, inline=False)
 
@@ -571,13 +585,15 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             inline=False
         )
 
-        await ctx.message.reply(embed=embed)
+        await ctx.message.reply(embed=embed, delete_after=600)
         await ctx.message.delete()
 
     @nowplaying_command.error
     async def nowplaying_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing. ")
+            message = "Nothing is currently playing. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Pause
@@ -591,16 +607,19 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         if not player.is_paused:
             await player.set_pause(True)
-            await ctx.message.add_reaction("⏸")
+            await ctx.message.reply(content="⏸ Paused the player. ", delete_after=300)
         else:
             await player.set_pause(False)
-            await ctx.message.add_reaction("▶")
+            await ctx.message.reply(content="▶ Resumed the player. ", delete_after=300)
+        await ctx.message.delete()
 
     @pause_command.error
     async def pause_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing. ")
-            await ctx.message.delete()
+            message = "Nothing is currently playing. "
+        await ctx.message.reply(content=message, delete_after=300)
+        await ctx.message.delete()
 
     # Resume
 
@@ -613,16 +632,19 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         if not player.is_paused:
             await player.set_pause(True)
-            await ctx.message.add_reaction("⏸")
+            await ctx.message.reply(content="⏸ Paused the player. ", delete_after=300)
         else:
             await player.set_pause(False)
-            await ctx.message.add_reaction("▶")
+            await ctx.message.reply(content="▶ Resumed the player. ", delete_after=300)
+        await ctx.message.delete()
 
     @resume_command.error
     async def resume_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing. ")
-            await ctx.message.delete()
+            message = "Nothing is currently playing. "
+        await ctx.message.reply(content=message, delete_after=300)
+        await ctx.message.delete()
 
     # Next
 
@@ -637,14 +659,17 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise QueueIsEmpty
 
         await player.stop()
-        await ctx.message.add_reaction("⏭")
+        await ctx.message.reply(content="⏭ Skipped song. ", delete_after=300)
+        await ctx.message.delete()
 
     @next_command.error
     async def next_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, QueueIsEmpty):
-            await ctx.message.reply("Can't skip, no songs are playing. ")
+            message = "Can't skip, no songs are playing. "
         elif isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing. ")
+            message = "Nothing is currently playing. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Previous
@@ -668,16 +693,19 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         else:
             player.queue.position -= 1
             await player.start_playback()
-        await ctx.message.add_reaction("⏮")
+        await ctx.message.reply(content="⏮ Playing previous track. ", delete_after=300)
+        await ctx.message.delete()
 
     @previous_command.error
     async def previous_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, QueueIsEmpty):
-            await ctx.message.reply("Queue is empty. ")
+            message = "Queue is empty. "
         elif isinstance(err, NoPreviousTracks):
-            await ctx.message.reply("No songs in history. ")
+            message = "No songs in history. "
         elif isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing. ")
+            message = "Nothing is currently playing. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Shuffle
@@ -690,13 +718,16 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise QueueIsEmpty
 
         player.queue.shuffle()
-        await ctx.message.add_reaction("🔀")
+        await ctx.message.reply(content="🔀 Shuffled the queue. ", delete_after=300)
+        await ctx.message.delete()
 
     @shuffle_command.error
     async def shuffle_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, QueueIsEmpty):
-            await ctx.message.reply("Can't shuffle, the queue is empty. ")
-            await ctx.message.delete()
+            message = "Can't shuffle, the queue is empty. "
+        await ctx.message.reply(content=message, delete_after=300)
+        await ctx.message.delete()
 
     # Repeat
 
@@ -708,12 +739,15 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise NoVoiceChannel
 
         player.queue.update_repeat_mode()
-        await ctx.message.add_reaction("🔁")
+        await ctx.message.reply(content="🔁 Repeating. ", delete_after=300)
+        await ctx.message.delete()
 
     @repeat_command.error
     async def repeat_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NoVoiceChannel):
-            await ctx.message.reply("Not connected to a voice channel. ")
+            message = "Not connected to a voice channel. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Restart
@@ -726,12 +760,15 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise NothingPlaying
 
         await player.seek(0)
-        await ctx.message.add_reaction("⏪")
+        await ctx.message.reply(content="⏪ Restarting track. ", delete_after=300)
+        await ctx.message.delete()
 
     @restart_command.error
     async def restart_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing. ")
+            message = "Nothing is currently playing. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Seek
@@ -746,21 +783,22 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         if not position.isdigit():
             raise InvalidTimeString
 
-        if player.queue.current_track > int(position):
+        if player.queue.current_track.length > int(position):
             await player.seek(int(position) * 1000)
-            await ctx.message.reply(f"Seeked to {position} seconds into the song. ")
+            await ctx.message.reply(content=f"Seeked to {position} seconds into the song. ", delete_after=300)
         else:
-            await ctx.message.reply("That's too long into the song. ")
+            await ctx.message.reply(content="That's too long into the song. ", delete_after=300)
         await ctx.message.delete()
 
     @seek_command.error
     async def seek_command_error(self, ctx, err):
         if isinstance(err, InvalidTimeString):
-            await ctx.message.reply("Not a valid time value. ")
+            message = "Not a valid time value. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing. ")
+            message = "Nothing is currently playing. "
         if isinstance(err, commands.MissingRequiredArgument):
-            await ctx.message.reply("You need to provide a value for the number of messages to be deleted. ")
+            message = "You need to provide a value for the number of messages to be deleted. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Volume
@@ -773,7 +811,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise NothingPlaying
 
         if value is None:
-            await ctx.message.reply(f"Current volume is set to {player.volume}%. ")
+            await ctx.message.reply(content=f"Current volume is set to {player.volume}%. ", delete_after=300)
         else:
             if not value.isdigit():
                 raise InvalidTimeString
@@ -784,21 +822,23 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
                 raise TooHighVolume
 
             await player.set_volume(int(value))
-            await ctx.message.add_reaction("👌")
+            await ctx.message.reply(content=f"Set the volume to {player.volume}%. ", delete_after=300)
             await ctx.message.delete()
 
     @volume_command.error
     async def volume_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, InvalidTimeString):
-            await ctx.message.reply("Not a valid volume value. ")
-        elif isinstance(err, QueueIsEmpty):
-            await ctx.message.reply("Nothing is currently playing. ")
-        elif isinstance(err, TooLowVolume):
-            await ctx.message.reply("Volume must be higher than 0. ")
-        elif isinstance(err, TooHighVolume):
-            await ctx.message.reply("Volume must be lower than 150. ")
-        elif isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing.  ")
+            message = "Not a valid volume value. "
+        if isinstance(err, QueueIsEmpty):
+            message = "Nothing is currently playing. "
+        if isinstance(err, TooLowVolume):
+            message = "Volume must be higher than 0. "
+        if isinstance(err, TooHighVolume):
+            message = "Volume must be lower than 150. "
+        if isinstance(err, NothingPlaying):
+            message = "Nothing is currently playing.  "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Lyrics
@@ -836,10 +876,12 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
     @lyrics_command.error
     async def lyrics_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, NoLyricsFound):
-            await ctx.message.reply("No lyrics could be found. ")
-        elif isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is playing. ")
+            message = "No lyrics could be found. "
+        if isinstance(err, NothingPlaying):
+            message = "Nothing is playing. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Clear
@@ -855,15 +897,17 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             raise QueueIsEmpty
 
         player.queue.empty()
-        await ctx.message.add_reaction("👌")
+        await ctx.message.reply(content="Cleared the queue. ", delete_after=300)
         await ctx.message.delete()
 
     @clear_command.error
     async def clear_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, QueueIsEmpty):
-            await ctx.message.reply("The queue is already empty. ")
+            message = "The queue is already empty. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently playing. ")
+            message = "Nothing is currently playing. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Move
@@ -900,14 +944,16 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
     @move_command.error
     async def move_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, commands.MissingRequiredArgument):
-            await ctx.message.reply("You need to provide the song you want to move and the new location for it. ")
+            message = "You need to provide the song you want to move and the new location for it. "
         if isinstance(err, FaultyIndex):
-            await ctx.message.reply("You need to provide valid indexes. ")
+            message = "You need to provide valid indexes. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently in the queue. ")
+            message = "Nothing is currently in the queue. "
         if isinstance(err, SameValue):
-            await ctx.message.reply("Dumb to move to the same position :thinking: ")
+            message = "Dumb to move to the same position :thinking: "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
     # Remove
@@ -942,12 +988,14 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
     @remove_command.error
     async def remove_command_error(self, ctx, err):
+        message = "Error. "
         if isinstance(err, commands.MissingRequiredArgument):
-            await ctx.message.reply("You need to provide the song you want to remove. ")
+            message = "You need to provide the song you want to remove. "
         if isinstance(err, FaultyIndex):
-            await ctx.message.reply("You need to provide a valid index. ")
+            message = "You need to provide a valid index. "
         if isinstance(err, NothingPlaying):
-            await ctx.message.reply("Nothing is currently in the queue. ")
+            message = "Nothing is currently in the queue. "
+        await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
 
