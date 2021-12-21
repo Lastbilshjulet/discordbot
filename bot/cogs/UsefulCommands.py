@@ -52,7 +52,11 @@ class UsefulCommands(commands.Cog):
 
     @commands.command(name="bonkmonk", help="Bonks the Monks. ")
     @commands.has_role("bonkers")
-    async def bonkmonk_command(self, ctx):
+    async def bonkmonk_command(self, ctx, mention: t.Optional[str]):
+        mention_id = 183521952210616320
+        if len(ctx.message.mentions) == 1:
+            mention_id = ctx.message.mentions[0].id
+
         if ctx.author.voice is None:
             raise NoVoiceChannel
 
@@ -63,13 +67,13 @@ class UsefulCommands(commands.Cog):
 
         message = None
         for member in ctx.author.voice.channel.members:
-            if member.id == 183521952210616320:
+            if member.id == mention_id:
                 await member.move_to(channel=ch, reason="Bonk")
-                message = await ctx.send(content=f"You just got bonked, <@{183521952210616320}>")
+                message = await ctx.send(content=f"You just got bonked, <@{mention_id}>")
                 await ctx.send(content="https://tenor.com/view/bonk-gif-18805247")
 
         if message is None:
-            await ctx.send(f"Psst <@{183521952210616320}>, <@{ctx.author.id}> tried to bonk you. ")
+            await ctx.send(f"Psst <@{mention_id}>, <@{ctx.author.id}> tried to bonk you. ")
 
         await ctx.message.delete()
 
