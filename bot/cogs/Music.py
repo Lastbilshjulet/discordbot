@@ -218,7 +218,6 @@ class Player(wavelink.Player):
         self.text_channel = ctx.message.channel
         if isinstance(tracks, wavelink.TrackPlaylist):
             self.queue.add(*tracks.tracks)
-            print(*tracks.tracks.title)
             embed = discord.Embed()
             embed.title = "Playlist"
             embed.description = "\n".join(
