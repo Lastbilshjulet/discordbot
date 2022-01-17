@@ -10,7 +10,7 @@ import discord
 import wavelink
 from discord.ext import commands
 
-VOLUME = 20
+VOLUME = 10
 URL_REGEX = r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
 LYRICS_URL = "https://some-random-api.ml/lyrics?title="
 OPTIONS = {
@@ -231,19 +231,22 @@ class Player(wavelink.Player):
             await ctx.message.delete()
         else:
             print(tracks[0].title)
-            self.queue.add(tracks[0])
-            embed = discord.Embed()
-            if self.queue.length == 1:
-                embed.set_author(name="Now playing")
+            if tracks[0].title == "Chug Jug With You - Parody of American Boy (Number One Victory Royale)":
+                await ctx.reply("nej")
             else:
-                embed.set_author(name="Added to queue")
-            embed.description = f":notes: [{tracks[0].title}]({tracks[0].uri}) ({tracks[0].length//60000}:{str((tracks[0].length//1000)%60).zfill(2)})"
-            embed.set_footer(
-                text=f"By {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
-            embed.colour = ctx.author.colour
-            embed.timestamp = dt.datetime.utcnow()
-            await ctx.send(embed=embed, delete_after=(self.queue.tracks_length-self.position)//1000)
-            await ctx.message.delete()
+                self.queue.add(tracks[0])
+                embed = discord.Embed()
+                if self.queue.length == 1:
+                    embed.set_author(name="Now playing")
+                else:
+                    embed.set_author(name="Added to queue")
+                embed.description = f":notes: [{tracks[0].title}]({tracks[0].uri}) ({tracks[0].length//60000}:{str((tracks[0].length//1000)%60).zfill(2)})"
+                embed.set_footer(
+                    text=f"By {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
+                embed.colour = ctx.author.colour
+                embed.timestamp = dt.datetime.utcnow()
+                await ctx.send(embed=embed, delete_after=(self.queue.tracks_length-self.position)//1000)
+                await ctx.message.delete()
 
         if not self.is_playing and not self.queue.is_empty:
             await self.start_playback()
@@ -446,6 +449,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             if not re.match(URL_REGEX, query):
                 query = f"ytsearch:{query}"
 
+            query = re.sub("&list=LL&index=[0-9]+", "", query)
+
             await player.add_tracks(ctx, await self.wavelink.get_tracks(query))
 
     @play_command.error
@@ -556,7 +561,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
     # Nowplaying
 
-    @commands.command(name="nowplaying", aliases=["playing", "np", "current"], help="Displaying the currently playing song.  - {np, current, playing}")
+    @commands.command(name="nowplaying", aliases=["playing", "np", "current"], help="Displaying the currently playing song. - {np, current, playing}")
     async def nowplaying_command(self, ctx):
         player = self.get_player(ctx)
 
@@ -782,6 +787,9 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         if not position.isdigit():
             raise InvalidTimeString
 
+        if player.queue.is_empty:
+            raise NothingPlaying
+
         if player.queue.current_track.length > int(position):
             await player.seek(int(position) * 1000)
             await ctx.message.reply(content=f"Seeked to {position} seconds into the song. ", delete_after=300)
@@ -822,7 +830,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
             await player.set_volume(int(value))
             await ctx.message.reply(content=f"Set the volume to {player.volume}%. ", delete_after=300)
-            await ctx.message.delete()
+        await ctx.message.delete()
 
     @volume_command.error
     async def volume_command_error(self, ctx, err):

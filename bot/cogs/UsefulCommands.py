@@ -21,21 +21,21 @@ class UsefulCommands(commands.Cog):
     @commands.has_any_role("Supreme leader", "COMP")
     async def purge_command(self, ctx, arg):
         if arg.isdigit() == False:
-            await ctx.message.reply("You must declare a value. :slight_smile:")
+            await ctx.message.reply("You must declare a value. :slight_smile:", delete_after=300)
         else:
             if int(arg) >= 100:
-                await ctx.message.reply("Value must be under 100.")
+                await ctx.message.reply("Value must be under 100.", delete_after=300)
             elif int(arg) < 1:
-                await ctx.message.reply("Value must be over 0.")
+                await ctx.message.reply("Value must be over 0.", delete_after=300)
             else:
                 await ctx.message.channel.purge(limit=int(arg)+1)
 
     @purge_command.error
     async def purge_command_error(self, ctx, error):
         if isinstance(error, commands.errors.CheckFailure):
-            await ctx.message.reply("You do not have the correct role for this command.")
+            await ctx.message.reply("You do not have the correct role for this command.", delete_after=300)
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.message.reply("You need to provide a value for the number of messages to be deleted. ")
+            await ctx.message.reply("You need to provide a value for the number of messages to be deleted. ", delete_after=300)
         await ctx.message.delete()
 
     # Icon
@@ -69,22 +69,25 @@ class UsefulCommands(commands.Cog):
         for member in ctx.author.voice.channel.members:
             if member.id == mention_id:
                 await member.move_to(channel=ch, reason="Bonk")
+                print(ctx.author, " tried to bonk ", member, ". ")
                 message = await ctx.send(content=f"You just got bonked, <@{mention_id}>")
                 await ctx.send(content="https://tenor.com/view/bonk-gif-18805247")
 
         if message is None:
             await ctx.send(f"Psst <@{mention_id}>, <@{ctx.author.id}> tried to bonk you. ")
+            print(ctx.author, " tried to bonk ", mention, ". ")
 
         await ctx.message.delete()
 
     @bonkmonk_command.error
     async def bonkmonk_command_error(self, ctx, error):
         if isinstance(error, commands.errors.CheckFailure):
-            await ctx.message.reply("You do not have the correct role for this command.")
+            await ctx.message.reply("You do not have the correct role for this command.", delete_after=300)
         if isinstance(error, commands.errors.MissingPermissions):
-            await ctx.message.reply("You do not have the permission to use bonkmonk.")
+            await ctx.message.reply("You do not have the permission to use bonkmonk.", delete_after=300)
         if isinstance(error, NoVoiceChannel):
-            await ctx.message.reply("You need to be in a voice channel to bonk the monk. ")
+            await ctx.message.reply("You need to be in a voice channel to bonk the monk. ", delete_after=300)
+        print(ctx.author, " tried to bonk the monk. ")
         await ctx.message.delete()
 
 
