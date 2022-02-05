@@ -78,6 +78,10 @@ class NotDigit(commands.CommandError):
     pass
 
 
+class TooShort(commands.CommandError):
+    pass
+
+
 class RepeatMode(Enum):
     NONE = 0
     SONG = 1
@@ -217,6 +221,8 @@ class Player(wavelink.Player):
             raise NoTracksFound
         self.text_channel = ctx.message.channel
         if isinstance(tracks, wavelink.TrackPlaylist):
+            print(ctx.guild, dt.datetime.now().strftime(
+                "%a %b %d %H:%M"), " -  Playlist added. ")
             self.queue.add(*tracks.tracks)
             embed = discord.Embed()
             embed.title = "Playlist"
@@ -226,27 +232,25 @@ class Player(wavelink.Player):
             embed.set_footer(
                 text=f"Added by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
             embed.colour = ctx.author.colour
-            embed.timestamp = dt.datetime.utcnow()
+            embed.timestamp = dt.datetime.now()
             await ctx.send(embed=embed)
             await ctx.message.delete()
         else:
-            print(tracks[0].title)
-            if tracks[0].title == "Chug Jug With You - Parody of American Boy (Number One Victory Royale)":
-                await ctx.reply("nej")
+            print(ctx.guild, dt.datetime.now().strftime(
+                "%a %b %d %H:%M"), " - ", tracks[0].title)
+            self.queue.add(tracks[0])
+            embed = discord.Embed()
+            if self.queue.length == self.queue.position:
+                embed.set_author(name="Now playing")
             else:
-                self.queue.add(tracks[0])
-                embed = discord.Embed()
-                if self.queue.length == 1:
-                    embed.set_author(name="Now playing")
-                else:
-                    embed.set_author(name="Added to queue")
-                embed.description = f":notes: [{tracks[0].title}]({tracks[0].uri}) ({tracks[0].length//60000}:{str((tracks[0].length//1000)%60).zfill(2)})"
-                embed.set_footer(
-                    text=f"By {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
-                embed.colour = ctx.author.colour
-                embed.timestamp = dt.datetime.utcnow()
-                await ctx.send(embed=embed, delete_after=(self.queue.tracks_length-self.position)//1000)
-                await ctx.message.delete()
+                embed.set_author(name="Added to queue")
+            embed.description = f":notes: [{tracks[0].title}]({tracks[0].uri}) ({tracks[0].length//60000}:{str((tracks[0].length//1000)%60).zfill(2)})"
+            embed.set_footer(
+                text=f"By {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
+            embed.colour = ctx.author.colour
+            embed.timestamp = dt.datetime.now()
+            await ctx.send(embed=embed, delete_after=(self.queue.tracks_length-self.position)//1000)
+            await ctx.message.delete()
 
         if not self.is_playing and not self.queue.is_empty:
             await self.start_playback()
@@ -266,7 +270,7 @@ class Player(wavelink.Player):
                     f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})" for i, t in enumerate(tracks[:5]))
             ),
             colour=ctx.author.colour,
-            timestamp=dt.datetime.utcnow()
+            timestamp=dt.datetime.now()
         )
         embed.set_author(name="Query Results")
         embed.set_footer(
@@ -312,7 +316,20 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         if not member.bot and after.channel is None:
             if not [m for m in before.channel.members if not m.bot]:
                 await self.get_player(member.guild).teardown()
+    """
+    @commands.Cog.cog_before_invoke()
+    async def check_users_voicechannel(self, ctx):
+        player = self.get_player(ctx)
+        if not player.is_connected:
+            await player.connect(ctx)
 
+    @commands.Cog.cog_command_error()
+    async def cog_command_error(self, ctx, err):
+        print(err)
+        message = "Error. "
+        await ctx.message.reply(content=message, delete_after=300)
+        await ctx.message.delete()
+    """
     @wavelink.WavelinkMixin.listener()
     async def on_node_ready(self, node):
         print(f"Wavelink node {node.identifier} ready. ")
@@ -449,7 +466,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             if not re.match(URL_REGEX, query):
                 query = f"ytsearch:{query}"
 
-            query = re.sub("&list=LL&index=[0-9]+", "", query)
+            # &index=[0-9]+
+            query = re.sub("&list=[^ \t\n\r\f\v]*", "", query)
 
             await player.add_tracks(ctx, await self.wavelink.get_tracks(query))
 
@@ -493,7 +511,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         elif isinstance(err, NoVoiceChannel):
             message = "You need to be connected to a voice channel to play music. "
         elif isinstance(err, NoSongProvided):
-            message = "No song is was provided"
+            message = "No song was provided"
         await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
@@ -511,6 +529,9 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         show = int(show)
 
+        if show == 1:
+            raise TooShort
+
         if player.queue.repeat_mode == RepeatMode.NONE:
             mode = ""
         elif player.queue.repeat_mode == RepeatMode.SONG:
@@ -524,7 +545,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             title="Queue" + mode + queue_length,
             description=f"Showing up to next {show} tracks",
             colour=ctx.author.colour,
-            timestamp=dt.datetime.utcnow()
+            timestamp=dt.datetime.now()
         )
         embed.set_footer(
             text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
@@ -538,11 +559,24 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             inline=False
         )
 
+        fieldvalues = []
+        qp = player.queue.position
         if upcoming := player.queue.upcoming:
+            value = ""
+            for i, t in enumerate(upcoming[:show-1]):
+                if len(value) > 900:
+                    fieldvalues.append(value)
+                    value = ""
+                value += f"**{i+2}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})\n"
+            fieldvalues.append(value)
+
+        for i, value in enumerate(fieldvalues):
+            name = "Next up"
+            if i > 0:
+                name = "More"
             embed.add_field(
-                name="Next up",
-                value="\n".join(
-                    f"**{i+2}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})" for i, t in enumerate(upcoming[:show-1])),
+                name=name,
+                value=value,
                 inline=False
             )
 
@@ -556,6 +590,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             message = "The queue is currently empty. "
         if isinstance(err, NotDigit):
             message = "The value must be a digit. "
+        if isinstance(err, TooShort):
+            message = "The value must be over 1, try -np if you want the currently playing song.  "
         await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
@@ -571,7 +607,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         embed = discord.Embed(
             title="Now playing",
             colour=ctx.author.colour,
-            timestamp=dt.datetime.utcnow(),
+            timestamp=dt.datetime.now(),
         )
         embed.set_author(name="Playback Information")
         embed.set_footer(
@@ -588,8 +624,9 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             value=f"{int(position[0])}:{round(position[1]/1000):02}/{int(length[0])}:{round(length[1]/1000):02}",
             inline=False
         )
-
-        await ctx.message.reply(embed=embed, delete_after=600)
+        duration_left = (int(length[0])*60 + round(length[1]/1000)) - \
+            (int(position[0])*60 + round(position[1]/1000))
+        await ctx.message.reply(embed=embed, delete_after=duration_left)
         await ctx.message.delete()
 
     @nowplaying_command.error
@@ -873,7 +910,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
                     title=data["title"],
                     description=data["lyrics"],
                     colour=ctx.author.colour,
-                    timestamp=dt.datetime.utcnow(),
+                    timestamp=dt.datetime.now(),
                 )
                 embed.colour = ctx.author.colour
                 embed.set_thumbnail(url=data["thumbnail"]["genius"])
@@ -944,9 +981,10 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         if len(player.queue.upcoming) + 1 < dest:
             dest = len(player.queue.upcoming)
 
-        player.queue.move(index, dest)
+        player.queue.move(index + player.queue.position,
+                          dest + player.queue.position)
 
-        await ctx.message.reply(content=f"Moved {player.queue.get(dest)} to {dest+1}. ", delete_after=300)
+        await ctx.message.reply(content=f"Moved {player.queue.get(dest + player.queue.position)} to {dest+1}. ", delete_after=300)
         await ctx.message.delete()
 
     @move_command.error
@@ -985,6 +1023,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
         if player.queue.is_empty:
             raise QueueIsEmpty
+
+        index = index + player.queue.position
 
         title = player.queue.get(index)
 
