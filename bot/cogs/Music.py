@@ -600,14 +600,15 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         embed.set_footer(
             text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
 
-        position = divmod(player.position, 60000)
-        length = divmod(player.queue.current_track.length, 60000)
-        embed.add_field(
-            name="Currently playing",
-            value=f"**{player.queue.position+1}.** [{player.queue.current_track.title}]({player.queue.current_track.uri})" +
-            f" - {int(position[0])}:{round(position[1]/1000):02}/{int(length[0])}:{round(length[1]/1000):02}",
-            inline=False
-        )
+        if player.queue.current_track:
+            position = divmod(player.position, 60000)
+            length = divmod(player.queue.current_track.length, 60000)
+            embed.add_field(
+                name="Currently playing",
+                value=f"**{player.queue.position+1}.** [{player.queue.current_track.title}]({player.queue.current_track.uri})" +
+                f" - {int(position[0])}:{round(position[1]/1000):02}/{int(length[0])}:{round(length[1]/1000):02}",
+                inline=False
+            )
 
         fieldvalues = []
         if history := player.queue.history:
@@ -620,8 +621,11 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             fieldvalues.append(value)
 
         for i, value in enumerate(fieldvalues):
+            name = "Previously played"
+            if i > 0:
+                name = "More"
             embed.add_field(
-                name="Previously played",
+                name=name,
                 value=value,
                 inline=False
             )
@@ -928,6 +932,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         await ctx.message.delete()
 
     # Lyrics
+    # TODO: Make this better, trash now
 
     @commands.command(name="lyrics", help="Prints the lyrics out if possible. ")
     async def lyrics_command(self, ctx, name: t.Optional[str]):
@@ -957,7 +962,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
                 embed.colour = ctx.author.colour
                 embed.set_thumbnail(url=data["thumbnail"]["genius"])
                 embed.set_author(name=data["author"])
-                await ctx.message.reply(embed=embed)
+                await ctx.message.reply(embed=embed, delete_after=600)
                 await ctx.message.delete()
 
     @lyrics_command.error
