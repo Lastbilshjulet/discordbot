@@ -221,7 +221,7 @@ class Player(wavelink.Player):
             raise NoTracksFound
         self.text_channel = ctx.message.channel
         if isinstance(tracks, wavelink.TrackPlaylist):
-            print(ctx.guild, dt.datetime.now().strftime(
+            print(ctx.guild, "-", dt.datetime.now().strftime(
                 "%a %b %d %H:%M"), " -  Playlist added. ")
             self.queue.add(*tracks.tracks)
             embed = discord.Embed()
@@ -232,11 +232,11 @@ class Player(wavelink.Player):
             embed.set_footer(
                 text=f"Added by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
             embed.colour = ctx.author.colour
-            embed.timestamp = dt.datetime.now()
+            embed.timestamp = dt.datetime.utcnow()
             await ctx.send(embed=embed)
             await ctx.message.delete()
         else:
-            print(ctx.guild, dt.datetime.now().strftime(
+            print(ctx.guild, "-", dt.datetime.now().strftime(
                 "%a %b %d %H:%M"), " - ", tracks[0].title)
             self.queue.add(tracks[0])
             embed = discord.Embed()
@@ -248,7 +248,7 @@ class Player(wavelink.Player):
             embed.set_footer(
                 text=f"By {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
             embed.colour = ctx.author.colour
-            embed.timestamp = dt.datetime.now()
+            embed.timestamp = dt.datetime.utcnow()
             await ctx.send(embed=embed, delete_after=(self.queue.tracks_length-self.position)//1000)
             await ctx.message.delete()
 
@@ -270,7 +270,7 @@ class Player(wavelink.Player):
                     f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})" for i, t in enumerate(tracks[:5]))
             ),
             colour=ctx.author.colour,
-            timestamp=dt.datetime.now()
+            timestamp=dt.datetime.utcnow()
         )
         embed.set_author(name="Query Results")
         embed.set_footer(
@@ -316,20 +316,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         if not member.bot and after.channel is None:
             if not [m for m in before.channel.members if not m.bot]:
                 await self.get_player(member.guild).teardown()
-    """
-    @commands.Cog.cog_before_invoke()
-    async def check_users_voicechannel(self, ctx):
-        player = self.get_player(ctx)
-        if not player.is_connected:
-            await player.connect(ctx)
 
-    @commands.Cog.cog_command_error()
-    async def cog_command_error(self, ctx, err):
-        print(err)
-        message = "Error. "
-        await ctx.message.reply(content=message, delete_after=300)
-        await ctx.message.delete()
-    """
     @wavelink.WavelinkMixin.listener()
     async def on_node_ready(self, node):
         print(f"Wavelink node {node.identifier} ready. ")
@@ -466,7 +453,6 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             if not re.match(URL_REGEX, query):
                 query = f"ytsearch:{query}"
 
-            # &index=[0-9]+
             query = re.sub("&list=[^ \t\n\r\f\v]*", "", query)
 
             await player.add_tracks(ctx, await self.wavelink.get_tracks(query))
@@ -545,7 +531,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             title="Queue" + mode + queue_length,
             description=f"Showing up to next {show} tracks",
             colour=ctx.author.colour,
-            timestamp=dt.datetime.now()
+            timestamp=dt.datetime.utcnow()
         )
         embed.set_footer(
             text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
@@ -560,7 +546,6 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         )
 
         fieldvalues = []
-        qp = player.queue.position
         if upcoming := player.queue.upcoming:
             value = ""
             for i, t in enumerate(upcoming[:show-1]):
@@ -595,6 +580,63 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
+    # History
+
+    @commands.command(name="history", aliases=["h"], help="Displays the previously played songs. - {h}")
+    async def history_command(self, ctx):
+        player = self.get_player(ctx)
+
+        if not player.queue.history:
+            raise NoPreviousTracks
+
+        history_length = " - " + str(len(player.queue.history))
+
+        embed = discord.Embed(
+            title="History" + history_length,
+            description=f"Showing previously played tracks",
+            colour=ctx.author.colour,
+            timestamp=dt.datetime.utcnow()
+        )
+        embed.set_footer(
+            text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
+
+        position = divmod(player.position, 60000)
+        length = divmod(player.queue.current_track.length, 60000)
+        embed.add_field(
+            name="Currently playing",
+            value=f"**{player.queue.position+1}.** [{player.queue.current_track.title}]({player.queue.current_track.uri})" +
+            f" - {int(position[0])}:{round(position[1]/1000):02}/{int(length[0])}:{round(length[1]/1000):02}",
+            inline=False
+        )
+
+        fieldvalues = []
+        if history := player.queue.history:
+            value = ""
+            for i, t in enumerate(history):
+                if len(value) > 900:
+                    fieldvalues.append(value)
+                    value = ""
+                value += f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})\n"
+            fieldvalues.append(value)
+
+        for i, value in enumerate(fieldvalues):
+            embed.add_field(
+                name="Previously played",
+                value=value,
+                inline=False
+            )
+
+        await ctx.message.reply(embed=embed, delete_after=600)
+        await ctx.message.delete()
+
+    @history_command.error
+    async def history_command_error(self, ctx, err):
+        message = "Error. "
+        if isinstance(err, NoPreviousTracks):
+            message = "No songs in history. "
+        await ctx.message.reply(content=message, delete_after=300)
+        await ctx.message.delete()
+
     # Nowplaying
 
     @commands.command(name="nowplaying", aliases=["playing", "np", "current"], help="Displaying the currently playing song. - {np, current, playing}")
@@ -607,7 +649,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         embed = discord.Embed(
             title="Now playing",
             colour=ctx.author.colour,
-            timestamp=dt.datetime.now(),
+            timestamp=dt.datetime.utcnow(),
         )
         embed.set_author(name="Playback Information")
         embed.set_footer(
@@ -910,7 +952,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
                     title=data["title"],
                     description=data["lyrics"],
                     colour=ctx.author.colour,
-                    timestamp=dt.datetime.now(),
+                    timestamp=dt.datetime.utcnow(),
                 )
                 embed.colour = ctx.author.colour
                 embed.set_thumbnail(url=data["thumbnail"]["genius"])
