@@ -18,7 +18,7 @@ class UsefulCommands(commands.Cog):
     # Purge
 
     @commands.command(name="purge", help="Purge messages from the channel by the value provided. ")
-    @commands.has_any_role("Supreme leader", "COMP", "Homies")
+    @commands.has_any_role("Supreme leader", "COMP")
     async def purge_command(self, ctx, arg):
         if arg.isdigit() == False:
             await ctx.message.reply("You must declare a value. :slight_smile:", delete_after=300)

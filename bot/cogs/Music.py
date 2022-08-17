@@ -225,9 +225,13 @@ class Player(wavelink.Player):
                 "%a %b %d %H:%M"), " -  Playlist added. ")
             self.queue.add(*tracks.tracks)
             embed = discord.Embed()
-            embed.title = "Playlist"
-            embed.description = "\n".join(
-                f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})" for i, t in enumerate(tracks.tracks))
+            embed.title = "Playlist -" + str(len(tracks.tracks))
+            description = ""
+            for i, t in enumerate(tracks.tracks):
+                if i == 10:
+                    break
+                description += f"\n**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})"
+            embed.description = description
             embed.set_author(name="Query Results")
             embed.set_footer(
                 text=f"Added by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
@@ -388,7 +392,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
 
     # Disconnect
 
-    @commands.command(name="disconnect", aliases=["dc"], help="Make the bot disconnect from current voice channel. - {dc}")
+    @commands.command(name="disconnect", aliases=["dc", "leave"], help="Make the bot disconnect from current voice channel. - {dc, leave}")
     async def disconnect_command(self, ctx):
         player = self.get_player(ctx)
 
@@ -556,6 +560,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             fieldvalues.append(value)
 
         for i, value in enumerate(fieldvalues):
+            if (len(embed) > 5000):
+                break
             name = "Next up"
             if i > 0:
                 name = "More"
@@ -621,6 +627,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             fieldvalues.append(value)
 
         for i, value in enumerate(fieldvalues):
+            if (len(embed) > 5000):
+                break
             name = "Previously played"
             if i > 0:
                 name = "More"
@@ -650,8 +658,15 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         if not player.is_playing:
             raise NothingPlaying
 
+        if player.queue.repeat_mode == RepeatMode.NONE:
+            mode = ""
+        elif player.queue.repeat_mode == RepeatMode.SONG:
+            mode = " - Song repeat"
+        elif player.queue.repeat_mode == RepeatMode.QUEUE:
+            mode = " - Queue repeat"
+
         embed = discord.Embed(
-            title="Now playing",
+            title="Now playing" + mode,
             colour=ctx.author.colour,
             timestamp=dt.datetime.utcnow(),
         )
@@ -951,7 +966,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
                 data = await r.json()
 
                 if len(data["lyrics"]) > 2000:
-                    return await ctx.message.reply(f"<{data['links']['genius']}>")
+                    await ctx.message.reply(f"<{data['links']['genius']}>")
+                    return await ctx.message.delete()
 
                 embed = discord.Embed(
                     title=data["title"],

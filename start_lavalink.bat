@@ -1,1 +1,1 @@
-cd jdk-13.0.2/bin && java -jar LavaLink.jar
+java -jar LavaLink.jar
