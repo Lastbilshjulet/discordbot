@@ -237,7 +237,7 @@ class Player(wavelink.Player):
                 text=f"Added by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
             embed.colour = ctx.author.colour
             embed.timestamp = dt.datetime.utcnow()
-            await ctx.send(embed=embed)
+            await ctx.send(embed=embed, delete_after=600)
             await ctx.message.delete()
         else:
             print(ctx.guild, "-", dt.datetime.now().strftime(
@@ -1061,6 +1061,34 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             message = "Nothing is currently in the queue. "
         if isinstance(err, SameValue):
             message = "Dumb to move to the same position :thinking: "
+        await ctx.message.reply(content=message, delete_after=300)
+        await ctx.message.delete()
+
+    # Cut
+
+    @commands.command(name="cut", aliases=["c"], help="Move the last song to the next spot in the queue. - {c}")
+    async def cut_command(self, ctx):
+        player = self.get_player(ctx)
+
+        if not player.is_connected or player.queue.is_empty:
+            raise NothingPlaying
+
+        if len(player.queue.upcoming) < 2:
+            raise TooShort
+
+        player.queue.move(len(player.queue.upcoming) +
+                          player.queue.position, 1 + player.queue.position)
+
+        await ctx.message.reply(content=f"Moved the last song to the next spot in the queue. ", delete_after=300)
+        await ctx.message.delete()
+
+    @cut_command.error
+    async def cut_command_error(self, ctx, err):
+        message = "Error. "
+        if isinstance(err, NothingPlaying):
+            message = "Nothing is currently in the queue. "
+        if isinstance(err, TooShort):
+            message = "The queue is too short. "
         await ctx.message.reply(content=message, delete_after=300)
         await ctx.message.delete()
 
