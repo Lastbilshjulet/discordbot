@@ -30,6 +30,10 @@ class NoVoiceChannel(commands.CommandError):
     pass
 
 
+class NotSameVoiceChannel(commands.CommandError):
+    pass
+
+
 class NoSongProvided(commands.CommandError):
     pass
 
@@ -200,6 +204,8 @@ class Player(wavelink.Player):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.queue = Queue()
+        self.latest_query = ""
+        self.number_of_tries = 0
 
     async def connect(self, ctx, channel=None):
         if self.is_connected:
@@ -376,7 +382,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
     @commands.command(name="connect", aliases=["join"], help="Make the bot connect to your voice channel. - {join}")
     async def connect_command(self, ctx, *, channel: t.Optional[discord.VoiceChannel]):
         player = self.get_player(ctx)
-        channel = await player.connect(ctx, channel)
+        channel = await player.connect(ctx, channel, True)
         await ctx.message.reply(content=f"Connected to {channel.name}. ", delete_after=300)
         await ctx.message.delete()
 
@@ -443,6 +449,7 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
     @commands.command(name="play", aliases=["p"], help="Play a song. - {p}")
     async def play_command(self, ctx, *, query: t.Optional[str]):
         player = self.get_player(ctx)
+        player.number_of_tries += 1
 
         if query is None:
             if player.is_paused:
@@ -453,27 +460,43 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         else:
             if not player.is_connected:
                 await player.connect(ctx)
+            elif ctx.author.voice.channel.id != player.channel_id:
+                raise NotSameVoiceChannel
             query = query.strip("<>")
             if not re.match(URL_REGEX, query):
                 query = f"ytsearch:{query}"
 
             query = re.sub("&list=[^ \t\n\r\f\v]*", "", query)
 
+            player.latest_query = query
             await player.add_tracks(ctx, await self.wavelink.get_tracks(query))
+            player.number_of_tries = 0
 
     @play_command.error
     async def play_command_error(self, ctx, err):
         message = "Error. "
         if isinstance(err, NoTracksFound):
-            message = "Could not find a song. "
+            player = self.get_player(ctx)
+            if player.number_of_tries < 2:
+                message = f"<@{ctx.author.id}>, I could not find a song. Trying again..."
+                await player.add_tracks(ctx, await self.wavelink.get_tracks(player.latest_query))
+                player.number_of_tries = 0
+            else:
+                message = f"<@{ctx.author.id}>, I could not find a song. "
+                player.number_of_tries = 0
         if isinstance(err, AlreadyConnectedToChannel):
-            message = "I am already connected to a voice channel. :slight_smile: "
+            message = f"<@{ctx.author.id}>, I am already connected to a voice channel. :slight_smile: "
         elif isinstance(err, NoVoiceChannel):
-            message = "You need to be connected to a voice channel to play music. "
+            message = f"<@{ctx.author.id}>, you need to be connected to a voice channel to play music. "
+        elif isinstance(err, NotSameVoiceChannel):
+            message = f"<@{ctx.author.id}>, you need to be connected to the same voice channel as the bot to play music. "
         elif isinstance(err, NoSongProvided):
-            message = "No song is was provided"
-        await ctx.message.reply(content=message, delete_after=300)
-        await ctx.message.delete()
+            message = f"<@{ctx.author.id}>, no song is was provided. "
+        await ctx.send(content=message, delete_after=300)
+        try:
+            await ctx.message.delete()
+        except:
+            print("tried to delete already deleted message")
 
     # Search
 
