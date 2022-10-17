@@ -478,8 +478,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
         if isinstance(err, NoTracksFound):
             player = self.get_player(ctx)
             if player.number_of_tries < 2:
-                message = f"<@{ctx.author.id}>, I could not find a song. Trying again..."
                 await player.add_tracks(ctx, await self.wavelink.get_tracks(player.latest_query))
+                message = ""
                 player.number_of_tries = 0
             else:
                 message = f"<@{ctx.author.id}>, I could not find a song. "
@@ -492,11 +492,13 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             message = f"<@{ctx.author.id}>, you need to be connected to the same voice channel as the bot to play music. "
         elif isinstance(err, NoSongProvided):
             message = f"<@{ctx.author.id}>, no song is was provided. "
-        await ctx.send(content=message, delete_after=300)
+        if message != "":
+            await ctx.send(content=message, delete_after=300)
         try:
             await ctx.message.delete()
         except:
             print("tried to delete already deleted message")
+        print(err)
 
     # Search
 
