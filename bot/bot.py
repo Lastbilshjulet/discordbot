@@ -22,17 +22,17 @@ class LabbeBot(commands.Bot):
 
         super().__init__(command_prefix=self.prefix, case_insensitive=True, intents=intents)
 
-    def setup(self):
+    async def setup(self):
         print("Running setup...")
 
         for cog in self._cogs:
-            self.load_extension(f"bot.cogs.{cog}")
+            await self.load_extension(f"bot.cogs.{cog}")
             print(f"Loaded {cog} cog. ")
 
         print("Setup complete.")
 
-    def run(self):
-        self.setup()
+    async def run(self):
+        await self.setup()
 
         with open("data/token.0", "r", encoding="utf-8") as f:
             TOKEN = f.read()

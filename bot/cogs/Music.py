@@ -458,7 +458,9 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             else:
                 raise NoSongProvided
         else:
-            if not player.is_connected:
+            if ctx.author.voice == None:
+                raise NoVoiceChannel
+            elif not player.is_connected:
                 await player.connect(ctx)
             elif ctx.author.voice.channel.id != player.channel_id:
                 raise NotSameVoiceChannel

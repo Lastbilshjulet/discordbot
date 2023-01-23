@@ -1,10 +1,11 @@
 from bot.bot import LabbeBot
+import asyncio
 
 
-def main():
+async def main():
     bot = LabbeBot()
-    bot.run()
+    await bot.run()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
