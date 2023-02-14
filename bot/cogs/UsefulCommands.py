@@ -43,9 +43,19 @@ class UsefulCommands(commands.Cog):
     @commands.command(name="icon", help="Links your icon. ")
     async def icon_command(self, ctx, mention: t.Optional[str]):
         if mention is not None and len(ctx.message.mentions) > 0:
-            await ctx.send(ctx.message.mentions[0].avatar_url)
+            await ctx.send(ctx.message.mentions[0].display_avatar)
         else:
-            await ctx.send(ctx.author.avatar_url)
+            await ctx.send(ctx.author.display_avatar)
+        await ctx.message.delete()
+
+    # Invite
+
+    @commands.command(name="invite", help="Sends a private message with an invite link to the bot. ")
+    async def invite_command(self, ctx):
+        invite_link = "https://discord.com/api/oauth2/authorize?client_id=880345602741899264&permissions=8&scope=bot"
+
+        await ctx.send(content=invite_link, ephemeral=True)
+
         await ctx.message.delete()
 
     # Bonkmonk
@@ -91,5 +101,5 @@ class UsefulCommands(commands.Cog):
         await ctx.message.delete()
 
 
-def setup(bot):
-    bot.add_cog(UsefulCommands(bot))
+async def setup(bot):
+    await bot.add_cog(UsefulCommands(bot))

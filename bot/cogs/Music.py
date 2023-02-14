@@ -1,6 +1,4 @@
-import asyncio
 import datetime as dt
-import random
 import re
 import typing as t
 from enum import Enum
@@ -9,6 +7,8 @@ import aiohttp
 import discord
 import wavelink
 from discord.ext import commands
+
+from bot.cogs.components.MusicPlayer import Player
 
 VOLUME = 10
 URL_REGEX = r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
@@ -92,230 +92,7 @@ class RepeatMode(Enum):
     QUEUE = 2
 
 
-# --------------------
-#
-#       Queue
-#
-# --------------------
-
-class Queue:
-    def __init__(self):
-        self._queue = []
-        self.position = 0
-        self.repeat_mode = RepeatMode.NONE
-
-    @property
-    def is_empty(self):
-        return not self._queue
-
-    @property
-    def current_track(self):
-        if self.is_empty:
-            raise QueueIsEmpty
-
-        if self.position <= len(self._queue) - 1:
-            return self._queue[self.position]
-
-    @property
-    def upcoming(self):
-        if self.is_empty:
-            raise QueueIsEmpty
-
-        return self._queue[self.position + 1:]
-
-    @property
-    def history(self):
-        if self.is_empty:
-            raise QueueIsEmpty
-
-        return self._queue[:self.position]
-
-    @property
-    def length(self):
-        return len(self.upcoming)
-
-    @property
-    def tracks_length(self):
-        len = self.current_track.length
-        for track in self.upcoming:
-            len += track.length
-        return len
-
-    def add(self, *args):
-        self._queue.extend(args)
-
-    def get(self, index):
-        return self._queue[index]
-
-    def move(self, index, dest):
-        track = self._queue.pop(index)
-        self._queue.insert(dest, track)
-
-    def remove(self, index):
-        self._queue.pop(index)
-
-    def get_next_track(self):
-        if self.is_empty:
-            raise QueueIsEmpty
-
-        self.position += 1
-
-        if self.position < 0:
-            return None
-        elif self.position > len(self._queue) - 1:
-            if self.repeat_mode == RepeatMode.QUEUE:
-                self.position = 0
-            else:
-                return None
-
-        return self._queue[self.position]
-
-    def shuffle(self):
-        if self.is_empty:
-            raise QueueIsEmpty
-
-        upcoming = self.upcoming
-        random.shuffle(upcoming)
-        self._queue = self._queue[:self.position + 1]
-        self._queue.extend(upcoming)
-
-    def update_repeat_mode(self):
-        if self.repeat_mode == RepeatMode.NONE:
-            self.repeat_mode = RepeatMode.SONG
-        elif self.repeat_mode == RepeatMode.SONG:
-            self.repeat_mode = RepeatMode.QUEUE
-        elif self.repeat_mode == RepeatMode.QUEUE:
-            self.repeat_mode = RepeatMode.NONE
-
-    def empty(self):
-        curr_track = self.current_track
-        self._queue.clear()
-        self.position = 0
-        self._queue.append(curr_track)
-
-# --------------------
-#
-#       Player
-#
-# --------------------
-
-
-class Player(wavelink.Player):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.queue = Queue()
-        self.latest_query = ""
-        self.number_of_tries = 0
-
-    async def connect(self, ctx, channel=None):
-        if self.is_connected:
-            raise AlreadyConnectedToChannel
-        if (channel := getattr(ctx.author.voice, "channel", channel)) is None:
-            raise NoVoiceChannel
-
-        await super().connect(channel.id)
-        return channel
-
-    async def teardown(self):
-        try:
-            await self.destroy()
-        except KeyError:
-            pass
-
-    async def add_tracks(self, ctx, tracks):
-        if not tracks:
-            raise NoTracksFound
-        self.text_channel = ctx.message.channel
-        if isinstance(tracks, wavelink.TrackPlaylist):
-            print(ctx.guild, "-", dt.datetime.now().strftime(
-                "%a %b %d %H:%M"), " -  Playlist added. ")
-            self.queue.add(*tracks.tracks)
-            embed = discord.Embed()
-            embed.title = "Playlist -" + str(len(tracks.tracks))
-            description = ""
-            for i, t in enumerate(tracks.tracks):
-                if i == 10:
-                    break
-                description += f"\n**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})"
-            embed.description = description
-            embed.set_author(name="Query Results")
-            embed.set_footer(
-                text=f"Added by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
-            embed.colour = ctx.author.colour
-            embed.timestamp = dt.datetime.utcnow()
-            await ctx.send(embed=embed, delete_after=600)
-            await ctx.message.delete()
-        else:
-            print(ctx.guild, "-", dt.datetime.now().strftime(
-                "%a %b %d %H:%M"), " - ", tracks[0].title)
-            self.queue.add(tracks[0])
-            embed = discord.Embed()
-            if self.queue.length == self.queue.position:
-                embed.set_author(name="Now playing")
-            else:
-                embed.set_author(name="Added to queue")
-            embed.description = f":notes: [{tracks[0].title}]({tracks[0].uri}) ({tracks[0].length//60000}:{str((tracks[0].length//1000)%60).zfill(2)})"
-            embed.set_footer(
-                text=f"By {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
-            embed.colour = ctx.author.colour
-            embed.timestamp = dt.datetime.utcnow()
-            await ctx.send(embed=embed, delete_after=(self.queue.tracks_length-self.position)//1000)
-            await ctx.message.delete()
-
-        if not self.is_playing and not self.queue.is_empty:
-            await self.start_playback()
-
-    async def choose_track(self, ctx, tracks):
-        def _check(r, u):
-            return (
-                r.emoji in OPTIONS.keys()
-                and u == ctx.author
-                and r.message.id == message.id
-            )
-
-        embed = discord.Embed(
-            title="Choose a song",
-            description=(
-                "\n".join(
-                    f"**{i+1}.** [{t.title}]({t.uri}) ({t.length//60000}:{str((t.length//1000)%60).zfill(2)})" for i, t in enumerate(tracks[:5]))
-            ),
-            colour=ctx.author.colour,
-            timestamp=dt.datetime.utcnow()
-        )
-        embed.set_author(name="Query Results")
-        embed.set_footer(
-            text=f"Invoked by {ctx.author.display_name}", icon_url=ctx.author.avatar_url)
-
-        message = await ctx.message.reply(embed=embed)
-        for emoji in list(OPTIONS.keys())[:min(len(tracks), len(OPTIONS))]:
-            await message.add_reaction(emoji)
-
-        try:
-            reaction, _ = await self.bot.wait_for("reaction_add", timeout=60.0, check=_check)
-        except asyncio.TimeoutError:
-            await message.delete()
-            await ctx.message.delete()
-        else:
-            await message.delete()
-            return tracks[OPTIONS[reaction.emoji]]
-
-    async def start_playback(self):
-        await self.play(self.queue.current_track)
-        await self.set_volume(VOLUME)
-        await self.set_pause(False)
-
-    async def advance(self):
-        try:
-            if (track := self.queue.get_next_track()) is not None:
-                await self.play(track)
-        except QueueIsEmpty:
-            pass
-
-    async def repeat_track(self):
-        await self.play(self.queue.current_track)
-
-
-class Music(commands.Cog, wavelink.WavelinkMixin):
+class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.wavelink = wavelink.Client(bot=bot)
@@ -327,8 +104,8 @@ class Music(commands.Cog, wavelink.WavelinkMixin):
             if not [m for m in before.channel.members if not m.bot]:
                 await self.get_player(member.guild).teardown()
 
-    @wavelink.WavelinkMixin.listener()
-    async def on_node_ready(self, node):
+    @commands.Cog.listener()
+    async def on_wavelink_node_ready(self, node):
         print(f"Wavelink node {node.identifier} ready. ")
 
     @wavelink.WavelinkMixin.listener("on_track_stuck")

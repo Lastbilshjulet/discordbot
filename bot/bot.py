@@ -1,6 +1,6 @@
 # Labbebot in python
 from pathlib import Path
-
+import asyncio
 import discord
 from discord.ext import commands
 
@@ -19,20 +19,21 @@ class LabbeBot(commands.Bot):
 
         intents = discord.Intents.default()
         intents.members = True
+        intents.message_content = True
 
         super().__init__(command_prefix=self.prefix, case_insensitive=True, intents=intents)
 
-    async def setup(self):
+    def setup(self):
         print("Running setup...")
 
         for cog in self._cogs:
-            await self.load_extension(f"bot.cogs.{cog}")
+            asyncio.run(self.load_extension(f"bot.cogs.{cog}"))
             print(f"Loaded {cog} cog. ")
 
         print("Setup complete.")
 
-    async def run(self):
-        await self.setup()
+    def run(self):
+        self.setup()
 
         with open("data/token.0", "r", encoding="utf-8") as f:
             TOKEN = f.read()
