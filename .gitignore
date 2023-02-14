@@ -5,6 +5,11 @@ openjdk-13.0.2_osx-x64_bin/
 openjdk-13.0.2_linux-x64_bin/
 bot/.env
 jdk-13.0.2/
+Lavalink.jar
+application.yml
+
+# comical app
+bot/cogs/Pornhub.py
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
