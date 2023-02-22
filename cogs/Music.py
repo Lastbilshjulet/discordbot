@@ -553,7 +553,7 @@ class Music(commands.Cog):
 
     # History - NOT FIXED need to copy and reverse
 
-    @commands.command(name="history", aliases=["h"], help="Displays the previously played songs. - {h}")
+    @commands.command(name="history", aliases=["h"], help="NOT FULLY FIXED - Displays the previously played songs. - {h}")
     async def history_command(self, ctx: commands.Context):
         player = ctx.voice_client
 
@@ -777,7 +777,7 @@ class Music(commands.Cog):
 
     # Previous - NOT FIXED need to copy and remove tracks being added over and over
 
-    @commands.command(name="previous", aliases=["back"], help="Go to the previous song. - {back}")
+    @commands.command(name="previous", aliases=["back"], help="NOT FULLY FIXED - Go to the previous song. - {back}")
     async def previous_command(self, ctx: commands.Context):
         player = ctx.voice_client
 
@@ -823,7 +823,7 @@ class Music(commands.Cog):
 
     # Shuffle - NOT FIXED, copy queue and put into list, clear queue, shuffle list, put all tracks back into queue
 
-    @commands.command(name="shuffle", help="Shuffle the queue. ")
+    @commands.command(name="shuffle", help="NOT FULLY FIXED - Shuffle the queue. ")
     async def shuffle_command(self, ctx: commands.Context):
         player = ctx.voice_client
 
@@ -855,7 +855,7 @@ class Music(commands.Cog):
 
     # Repeat
 
-    @commands.command(name="repeat", aliases=["loop"], help="Repeates either the queue or the song. - {loop}")
+    @commands.command(name="repeat", aliases=["loop"], help="NOT FULLY FIXED - Repeates either the queue or the song. - {loop}")
     async def repeat_command(self, ctx: commands.Context):
         player = ctx.voice_client
 
@@ -1047,7 +1047,7 @@ class Music(commands.Cog):
 
                 duration = 180
                 if player.is_playing():
-                    duration = player.track.position
+                    duration = player.position
 
                 await ctx.message.reply(embed=embed, delete_after=duration)
                 await ctx.message.delete()
@@ -1102,9 +1102,9 @@ class Music(commands.Cog):
 
     # Move - NOT FIXED, need to copy queue into list and reorder that way
 
-    @commands.command(name="move", aliases=["m"], help="Move a song to another spot in the queue. - {m}")
+    @commands.command(name="move", aliases=["m"], help="NOT FULLY FIXED - Move a song to another spot in the queue. - {m}")
     async def move_command(self, ctx: commands.Context, index, dest):
-        player = self.get_player(ctx)
+        player = ctx.voice_client
 
         if not player.is_connected() or player.queue.is_empty:
             raise NothingPlaying
@@ -1149,9 +1149,9 @@ class Music(commands.Cog):
 
     # Cut
 
-    @commands.command(name="cut", aliases=["c"], help="Move the last song to the next spot in the queue. - {c}")
+    @commands.command(name="cut", aliases=["c"], help="NOT FULLY FIXED - Move the last song to the next spot in the queue. - {c}")
     async def cut_command(self, ctx: commands.Context):
-        player = self.get_player(ctx)
+        player = ctx.voice_client
 
         if not player.is_connected() or player.queue.is_empty:
             raise NothingPlaying
@@ -1178,9 +1178,9 @@ class Music(commands.Cog):
 
     # Remove - NOT FIXED need to copy and add back all items except the one being removed
 
-    @commands.command(name="remove", aliases=["rm"], help="Remove a song from the queue. - {rm}")
+    @commands.command(name="remove", aliases=["rm"], help="NOT FULLY FIXED - Remove a song from the queue. - {rm}")
     async def remove_command(self, ctx: commands.Context, index):
-        player = self.get_player(ctx)
+        player = ctx.voice_client
 
         if not player.is_connected() or player.queue.is_empty:
             raise NothingPlaying
