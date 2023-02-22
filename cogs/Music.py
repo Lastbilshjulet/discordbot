@@ -328,7 +328,7 @@ class Music(commands.Cog):
         print("play: ", err)
         await ctx.message.delete()
 
-    async def play_track(self, ctx: commands.Context, track):
+    async def play_track(self, ctx: commands.Context, track: wavelink.Track):
         player = ctx.voice_client
 
         try:
@@ -364,41 +364,11 @@ class Music(commands.Cog):
         player.text_channel = ctx.channel
 
         await ctx.send(embed=embed, delete_after=duration)
-        await ctx.message.delete()
 
-    # Alvin
-
-    @commands.command(name="alvin", aliases=["f"], help="Apply a alvin and the chipmunks filter to the song. - {f}")
-    async def alvin_command(self, ctx: commands.Context, speed: float = 1.0, pitch: float = 2.0, rate: float = 1.0):
-        player = ctx.voice_client
-
-        self.check_if_connected(player)
-
-        if not player.is_playing():
-            raise NothingPlaying
-
-        await player.set_filter(wavelink.filters.Filter(timescale=wavelink.filters.Timescale(speed=speed, pitch=pitch, rate=rate)))
-
-        embed = discord.Embed(
-            timestamp=dt.datetime.utcnow(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
-        )
-
-        embed.title = "Alvin and the chipmunks filter has been applied."
-
-        await ctx.message.reply(embed=embed, delete_after=60)
-        await ctx.message.delete()
-
-    @alvin_command.error
-    async def cut_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
-        print("alvin: ", err)
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except Exception:
+            print("Trying to delete message that has been deleted. ")
 
     # Search
 
@@ -452,12 +422,48 @@ class Music(commands.Cog):
         message = "Error. "
         if isinstance(err, NoTracksFound):
             message = "Could not find a song. "
-        elif isinstance(err, NoVoiceChannel):
+        if isinstance(err, NoVoiceChannel):
             message = "You need to be connected to a voice channel to play music. "
-        elif isinstance(err, NoSongProvided):
-            message = "No song was provided"
+        if isinstance(err, NoSongProvided):
+            message = "No song was provided. . "
         await ctx.message.reply(content=message, delete_after=60)
         print("search: ", err)
+        await ctx.message.delete()
+
+    # Playlist
+
+    @commands.command(name="playlist", aliases=["pl"], help="Queue a whole playlist, youtube or spotify. - {pl}")
+    async def playlist_command(
+        self,
+        ctx: commands.Context,
+        tracks: t.Union[
+            wavelink.YouTubePlaylist,
+            str
+        ]
+    ):
+        if not tracks:
+            raise NoSongProvided
+
+        decoded = spotify.decode_url(tracks)
+
+        if decoded and (decoded['type'] is spotify.SpotifySearchType.playlist or decoded['type'] is spotify.SpotifySearchType.album):
+            async for track in spotify.SpotifyTrack.iterator(query=decoded["id"], type=decoded["type"]):
+                await self.play_track(ctx, track)
+        else:
+            for track in tracks.tracks:
+                await self.play_track(ctx, track)
+
+    @playlist_command.error
+    async def playlist_command_error(self, ctx: commands.Context, err):
+        message = "Error. "
+        if isinstance(err, NothingPlaying):
+            message = "Nothing is playing. "
+        if isinstance(err, NoVoiceChannel):
+            message = "Not connected to a voice channel. "
+        if isinstance(err, NoSongProvided):
+            message = "No song was provided. "
+        await ctx.message.reply(content=message, delete_after=60)
+        print("playlist: ", err)
         await ctx.message.delete()
 
     # Queue
@@ -488,7 +494,7 @@ class Music(commands.Cog):
             embed.title = "Queue"
         else:
             embed.title = "Queue - " + str(player.queue.count)
-            embed.description = f"Showing up to next {show} tracks"
+            embed.description = f"Showing up to the next {show} tracks"
 
         embed.set_footer(
             text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar)
@@ -502,8 +508,6 @@ class Music(commands.Cog):
             inline=False
         )
 
-        duration = player.track.length - player.position
-
         fieldvalues = []
         value = ""
         for i, t in enumerate(player.queue):
@@ -511,7 +515,8 @@ class Music(commands.Cog):
                 fieldvalues.append(value)
                 value = ""
             value += f"**{i+2}.** [{t.title}]({t.uri}) ({self.format_duration(t.length)})\n"
-            duration += t.length
+            if i == show:
+                break
         fieldvalues.append(value)
 
         for i, value in enumerate(fieldvalues):
@@ -528,7 +533,7 @@ class Music(commands.Cog):
                 inline=False
             )
 
-        await ctx.message.reply(embed=embed, delete_after=duration)
+        await ctx.message.reply(embed=embed, delete_after=60)
         await ctx.message.delete()
 
     @queue_command.error
@@ -1214,6 +1219,40 @@ class Music(commands.Cog):
             message = "Nothing is currently in the queue. "
         await ctx.message.reply(content=message, delete_after=60)
         print("remove: ", err)
+        await ctx.message.delete()
+
+    # Alvin
+
+    @commands.command(name="alvin", aliases=["a"], help="Apply a alvin and the chipmunks filter to the song. - {a}")
+    async def alvin_command(self, ctx: commands.Context, speed: float = 1.0, pitch: float = 2.0, rate: float = 1.0):
+        player = ctx.voice_client
+
+        self.check_if_connected(player)
+
+        if not player.is_playing():
+            raise NothingPlaying
+
+        await player.set_filter(wavelink.filters.Filter(timescale=wavelink.filters.Timescale(speed=speed, pitch=pitch, rate=rate)))
+
+        embed = discord.Embed(
+            timestamp=dt.datetime.utcnow(),
+            colour=discord.Colour.from_rgb(209, 112, 2)
+        )
+
+        embed.title = "Alvin and the chipmunks filter has been applied."
+
+        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.delete()
+
+    @alvin_command.error
+    async def alvin_command_error(self, ctx: commands.Context, err):
+        message = "Error. "
+        if isinstance(err, NothingPlaying):
+            message = "Nothing is playing. "
+        if isinstance(err, NoVoiceChannel):
+            message = "Not connected to a voice channel. "
+        await ctx.message.reply(content=message, delete_after=60)
+        print("alvin: ", err)
         await ctx.message.delete()
 
 
