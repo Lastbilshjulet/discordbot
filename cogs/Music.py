@@ -511,12 +511,12 @@ class Music(commands.Cog):
         fieldvalues = []
         value = ""
         for i, t in enumerate(player.queue):
+            if i == show-1:
+                break
             if len(value) > 900:
                 fieldvalues.append(value)
                 value = ""
             value += f"**{i+2}.** [{t.title}]({t.uri}) ({self.format_duration(t.length)})\n"
-            if i == show:
-                break
         fieldvalues.append(value)
 
         for i, value in enumerate(fieldvalues):
