@@ -315,7 +315,9 @@ class Music(commands.Cog):
     ):
         if not track:
             raise NoSongProvided
+
         await self.play_track(ctx, track)
+        await self.print_play_message(ctx, track)
 
     @play_command.error
     async def play_command_error(self, ctx: commands.Context, err):
@@ -328,6 +330,8 @@ class Music(commands.Cog):
         print("play: ", err)
         await ctx.message.delete()
 
+    # Play extracted
+
     async def play_track(self, ctx: commands.Context, track: wavelink.Track):
         player = ctx.voice_client
 
@@ -339,16 +343,24 @@ class Music(commands.Cog):
         if not player:
             player, channel = await self.connect(ctx, channel=ctx.author.voice.channel)
 
+        player.text_channel = ctx.channel
+
         if not player.is_playing():
             player.queue.history.put_at_front(track)
             await player.play(source=track, volume=VOLUME)
-            duration = track.length
-            embed = discord.Embed()
-            embed.set_author(name="Now playing")
         else:
-            # track.dj = ctx.author
             await player.queue.put_wait(track)
-            embed = discord.Embed()
+
+    # Print play extracted
+
+    async def print_play_message(self, ctx: commands.Context, track: wavelink.Track):
+        player = ctx.voice_client
+
+        embed = discord.Embed()
+        if player.track is track:
+            embed.set_author(name="Now playing")
+            duration = track.length
+        else:
             embed.set_author(name="Added to queue")
             duration = 60
 
@@ -361,14 +373,8 @@ class Music(commands.Cog):
         if track.thumbnail:
             embed.set_thumbnail(url=track.thumbnail)
 
-        player.text_channel = ctx.channel
-
         await ctx.send(embed=embed, delete_after=duration)
-
-        try:
-            await ctx.message.delete()
-        except Exception:
-            print("Trying to delete message that has been deleted. ")
+        await ctx.message.delete()
 
     # Search
 
@@ -416,6 +422,7 @@ class Music(commands.Cog):
             await message.delete()
             track = tracks[OPTIONS[reaction.emoji]]
             await self.play_track(ctx, track)
+            await self.print_play_message(ctx, track)
 
     @search_command.error
     async def search_command_error(self, ctx: commands.Context, err):
@@ -444,14 +451,28 @@ class Music(commands.Cog):
         if not tracks:
             raise NoSongProvided
 
-        decoded = spotify.decode_url(tracks)
+        tracksForPrint = []
+
+        decoded = None
+        if not isinstance(tracks, wavelink.YouTubePlaylist):
+            decoded = spotify.decode_url(tracks)
+        embed = discord.Embed(
+            colour=ctx.author.colour,
+            timestamp=dt.datetime.utcnow(),
+            title="Loading songs..."
+        )
+        message = await ctx.message.reply(embed=embed)
 
         if decoded and (decoded['type'] is spotify.SpotifySearchType.playlist or decoded['type'] is spotify.SpotifySearchType.album):
             async for track in spotify.SpotifyTrack.iterator(query=decoded["id"], type=decoded["type"]):
                 await self.play_track(ctx, track)
+                tracksForPrint.append(track)
         else:
             for track in tracks.tracks:
                 await self.play_track(ctx, track)
+                tracksForPrint.append(track)
+
+        await self.print_playlist_message(ctx, message, tracks, tracksForPrint)
 
     @playlist_command.error
     async def playlist_command_error(self, ctx: commands.Context, err):
@@ -464,6 +485,42 @@ class Music(commands.Cog):
             message = "No song was provided. "
         await ctx.message.reply(content=message, delete_after=60)
         print("playlist: ", err)
+        await ctx.message.delete()
+
+    # Print playlist extracted
+
+    async def print_playlist_message(self, ctx: commands.Context, message, playlist, tracks):
+        embed = discord.Embed(
+            colour=ctx.author.colour,
+            timestamp=dt.datetime.utcnow(),
+            title=f"Queueing a playlist - {len(tracks)} - {self.format_duration(sum(t.duration for t in tracks))}"
+        )
+
+        if isinstance(playlist, wavelink.YouTubePlaylist):
+            embed.description = f"{playlist.name}"
+        else:
+            embed.description = f"[Spotify Playlist]({playlist})"
+
+        embed.set_footer(
+            text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar)
+
+        value = ""
+        for i, t in enumerate(tracks):
+            if len(value) > 900:
+                break
+            value += f"**{i+1}.** [{t.title}]({t.uri}) ({self.format_duration(t.length)})\n"
+
+        embed.add_field(
+            name="Queued songs",
+            value=value,
+            inline=False
+        )
+        embed.add_field(
+            name="And more",
+            value=""
+        )
+
+        await message.edit(embed=embed, delete_after=120)
         await ctx.message.delete()
 
     # Queue
@@ -490,16 +547,16 @@ class Music(commands.Cog):
             timestamp=dt.datetime.utcnow()
         )
 
-        if player.queue.is_empty:
-            embed.title = "Queue"
-        else:
-            embed.title = "Queue - " + str(player.queue.count)
-            embed.description = f"Showing up to the next {show} tracks"
-
         embed.set_footer(
             text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar)
 
         track = player.track
+
+        if player.queue.is_empty:
+            embed.title = "Queue"
+        else:
+            embed.title = f"Queue - {str(player.queue.count)} - {self.format_duration((track.length - player.position) + sum(t.duration for t in player.queue))}"
+            embed.description = f"Showing up to the next {show} tracks"
 
         embed.add_field(
             name="Currently playing",
@@ -1149,18 +1206,18 @@ class Music(commands.Cog):
 
     # Cut
 
-    @commands.command(name="cut", aliases=["c"], help="NOT FULLY FIXED - Move the last song to the next spot in the queue. - {c}")
+    @commands.command(name="cut", aliases=["c"], help="NOT FULLY FIXED, maybe? not tested - Move the last song to the next spot in the queue. - {c}")
     async def cut_command(self, ctx: commands.Context):
-        player = ctx.voice_client
+        player: wavelink.Player = ctx.voice_client
 
-        if not player.is_connected() or player.queue.is_empty:
-            raise NothingPlaying
+        self.check_if_connected(player)
 
-        if len(player.queue.upcoming) < 2:
+        if player.queue.count < 2:
             raise TooShort
 
-        player.queue.move(len(player.queue.upcoming) +
-                          player.queue.position, 1 + player.queue.position)
+        track = player.queue.pop()
+
+        player.queue.put_at_front(track)
 
         await ctx.message.reply(content=f"Moved the last song to the next spot in the queue. ", delete_after=60)
         await ctx.message.delete()
