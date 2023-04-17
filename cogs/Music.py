@@ -164,8 +164,10 @@ class Music(commands.Cog):
         embed.colour = player.author.colour
         embed.timestamp = dt.datetime.utcnow()
 
-        if track.thumbnail:
+        try:
             embed.set_thumbnail(url=track.thumbnail)
+        except:
+            pass
 
         await player.text_channel.send(embed=embed, delete_after=duration, silent=True)
 
@@ -382,8 +384,10 @@ class Music(commands.Cog):
         embed.colour = ctx.author.colour
         embed.timestamp = dt.datetime.utcnow()
 
-        if track.thumbnail:
+        try:
             embed.set_thumbnail(url=track.thumbnail)
+        except:
+            pass
 
         await ctx.send(embed=embed, delete_after=duration, silent=True)
         await ctx.message.delete()
