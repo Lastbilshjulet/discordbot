@@ -148,7 +148,7 @@ class Music(commands.Cog):
 
         if player.queue.count == 0:
             embed.title = "The queue is empty, play something new :rage:"
-            await player.text_channel.send(embed=embed, delete_after=60)
+            await player.text_channel.send(embed=embed, delete_after=60, silent=True)
             return
 
         track = player.queue.get()
