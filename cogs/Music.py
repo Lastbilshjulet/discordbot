@@ -154,17 +154,28 @@ class Music(commands.Cog):
         track = player.queue.get()
         await player.play(source=track, volume=VOLUME)
 
-        embed.description = f":notes: [{track.title}]({track.uri}) ({int(track.length//60)}:{str(int(track.length%60)).zfill(2)})"
+        embed = discord.Embed()
         embed.set_author(name="Now playing")
+        duration = track.length
+
+        embed.description = f":notes: [{track.title}]({track.uri}) ({self.format_duration(track.length)})"
         embed.set_footer(
-            text=f"By Queue for now, TODO: add user", icon_url="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fmedia.tenor.com%2Fimages%2Fa67cef9e36e5b3f35f0d19ff3c9d359a%2Ftenor.gif&f=1&nofb=1&ipt=c5f36b8a01d22d622c4f852bfcef5dada330624224be24bfb9708108d50e1105&ipo=images"
-        )
-        await player.text_channel.send(embed=embed, delete_after=track.length)
+            text=f"By {player.author.display_name}", icon_url=player.author.display_avatar)
+        embed.colour = player.author.colour
+        embed.timestamp = dt.datetime.utcnow()
+
+        if track.thumbnail:
+            embed.set_thumbnail(url=track.thumbnail)
+
+        await player.text_channel.send(embed=embed, delete_after=duration, silent=True)
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(self, player, track, error):
         print(
             f"on_wavelink_track_exception | player: {player.guild.name}, track: {track}, error: {error}")
+
+        if error == "This video is not available":
+            await player.queue.put_at_front(track)
 
     @commands.Cog.listener()
     async def on_wavelink_track_stuck(self, player, track, threshold):
@@ -208,7 +219,7 @@ class Music(commands.Cog):
         )
         embed.title = "Disconnected. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @connect_command.error
@@ -216,7 +227,7 @@ class Music(commands.Cog):
         message = "Error. "
         if isinstance(err, NoVoiceChannel):
             message = "You need to be connected to, or supply a channel for me to connect to. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("connect: ", err)
         await ctx.message.delete()
 
@@ -253,7 +264,7 @@ class Music(commands.Cog):
         )
         embed.title = "Disconnected. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @disconnect_command.error
@@ -261,7 +272,7 @@ class Music(commands.Cog):
         message = "Error. "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("disconnect: ", err)
         await ctx.message.delete()
 
@@ -286,7 +297,7 @@ class Music(commands.Cog):
         )
         embed.title = "Stopped the player and cleared the queue. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @stop_command.error
@@ -296,7 +307,7 @@ class Music(commands.Cog):
             message = "Nothing is playing. "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("stop: ", err)
         await ctx.message.delete()
 
@@ -326,7 +337,7 @@ class Music(commands.Cog):
             message = "You need to be connected to a voice channel to play music. "
         if isinstance(err, NoSongProvided):
             message = "No song is was provided. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("play: ", err)
         await ctx.message.delete()
 
@@ -344,6 +355,7 @@ class Music(commands.Cog):
             player, channel = await self.connect(ctx, channel=ctx.author.voice.channel)
 
         player.text_channel = ctx.channel
+        player.author = ctx.author
 
         if not player.is_playing():
             player.queue.history.put_at_front(track)
@@ -373,7 +385,7 @@ class Music(commands.Cog):
         if track.thumbnail:
             embed.set_thumbnail(url=track.thumbnail)
 
-        await ctx.send(embed=embed, delete_after=duration)
+        await ctx.send(embed=embed, delete_after=duration, silent=True)
         await ctx.message.delete()
 
     # Search
@@ -433,7 +445,7 @@ class Music(commands.Cog):
             message = "You need to be connected to a voice channel to play music. "
         if isinstance(err, NoSongProvided):
             message = "No song was provided. . "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("search: ", err)
         await ctx.message.delete()
 
@@ -483,7 +495,7 @@ class Music(commands.Cog):
             message = "Not connected to a voice channel. "
         if isinstance(err, NoSongProvided):
             message = "No song was provided. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("playlist: ", err)
         await ctx.message.delete()
 
@@ -520,7 +532,7 @@ class Music(commands.Cog):
             value=""
         )
 
-        await message.edit(embed=embed, delete_after=120)
+        await message.edit(embed=embed, delete_after=120, silent=True)
         await ctx.message.delete()
 
     # Queue
@@ -590,7 +602,7 @@ class Music(commands.Cog):
                 inline=False
             )
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @queue_command.error
@@ -604,7 +616,7 @@ class Music(commands.Cog):
             message = "The value must be a digit. "
         if isinstance(err, TooShort):
             message = "The value must be over 1, try -np if you want the currently playing song.  "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("queue: ", err)
         await ctx.message.delete()
 
@@ -656,7 +668,7 @@ class Music(commands.Cog):
                 inline=False
             )
 
-        await ctx.message.reply(embed=embed, delete_after=120)
+        await ctx.message.reply(embed=embed, delete_after=120, silent=True)
         await ctx.message.delete()
 
     @history_command.error
@@ -666,7 +678,7 @@ class Music(commands.Cog):
             message = "Not connected to a voice channel. "
         if isinstance(err, NoPreviousTracks):
             message = "No songs in history. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("history: ", err)
         await ctx.message.delete()
 
@@ -711,7 +723,7 @@ class Music(commands.Cog):
 
         duration = player.track.length - player.position
 
-        await ctx.message.reply(embed=embed, delete_after=duration)
+        await ctx.message.reply(embed=embed, delete_after=duration, silent=True)
         await ctx.message.delete()
 
     @nowplaying_command.error
@@ -721,7 +733,7 @@ class Music(commands.Cog):
             message = "Not connected to a voice channel. "
         if isinstance(err, NothingPlaying):
             message = "Nothing is currently playing. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("nowplaying: ", err)
         await ctx.message.delete()
 
@@ -748,7 +760,7 @@ class Music(commands.Cog):
             await player.set_pause(True)
             embed.title = "⏸ Paused the player. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @pause_command.error
@@ -758,7 +770,7 @@ class Music(commands.Cog):
             message = "Nothing is currently playing. "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("pause: ", err)
         await ctx.message.delete()
 
@@ -785,7 +797,7 @@ class Music(commands.Cog):
             await player.set_pause(True)
             embed.title = "⏸ Paused the player. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @resume_command.error
@@ -795,7 +807,7 @@ class Music(commands.Cog):
             message = "Nothing is currently playing. "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("resume: ", err)
         await ctx.message.delete()
 
@@ -818,7 +830,7 @@ class Music(commands.Cog):
         )
         embed.title = "⏭ Skipped song. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @next_command.error
@@ -828,7 +840,7 @@ class Music(commands.Cog):
             message = "Not connected to a voice channel. "
         if isinstance(err, NothingPlaying):
             message = "Nothing is currently playing. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("next: ", err)
         await ctx.message.delete()
 
@@ -860,7 +872,7 @@ class Music(commands.Cog):
         embed.set_author(name="This command is not 100% fixed")
         embed.title = "⏮ Playing previous track. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @previous_command.error
@@ -874,7 +886,7 @@ class Music(commands.Cog):
             message = "No songs in history. "
         if isinstance(err, NothingPlaying):
             message = "Nothing is currently playing. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("previous: ", err)
         await ctx.message.delete()
 
@@ -898,7 +910,7 @@ class Music(commands.Cog):
             name="This command is not fixed, does not do anything")
         embed.title = "🔀 Shuffled the queue. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @shuffle_command.error
@@ -906,7 +918,7 @@ class Music(commands.Cog):
         message = "Error. "
         if isinstance(err, QueueIsEmpty):
             message = "Can't shuffle, the queue is empty. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("shuffle: ", err)
         await ctx.message.delete()
 
@@ -925,7 +937,7 @@ class Music(commands.Cog):
         )
         embed.title = "🔁 Repeating. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @repeat_command.error
@@ -933,7 +945,7 @@ class Music(commands.Cog):
         message = "Error. "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("repeat: ", err)
         await ctx.message.delete()
 
@@ -956,7 +968,7 @@ class Music(commands.Cog):
         )
         embed.title = "⏪ Restarting track. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @restart_command.error
@@ -966,7 +978,7 @@ class Music(commands.Cog):
             message = "Nothing is currently playing. "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("restart: ", err)
         await ctx.message.delete()
 
@@ -995,7 +1007,7 @@ class Music(commands.Cog):
         )
         embed.title = f"Seeked to {position} seconds into the song. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @seek_command.error
@@ -1011,7 +1023,7 @@ class Music(commands.Cog):
             message = "Taht's too far into the song. "
         if isinstance(err, commands.MissingRequiredArgument):
             message = "You need to provide a value for the number of messages to be deleted. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("seek: ", err)
         await ctx.message.delete()
 
@@ -1045,7 +1057,7 @@ class Music(commands.Cog):
             await player.set_volume(int(value))
             embed.title = f"Set the volume to {player.volume}%. "
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @volume_command.error
@@ -1063,7 +1075,7 @@ class Music(commands.Cog):
             message = "Nothing is currently playing.  "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("volume: ", err)
         await ctx.message.delete()
 
@@ -1106,7 +1118,7 @@ class Music(commands.Cog):
                 if player.is_playing():
                     duration = player.position
 
-                await ctx.message.reply(embed=embed, delete_after=duration)
+                await ctx.message.reply(embed=embed, delete_after=duration, silent=True)
                 await ctx.message.delete()
 
     @lyrics_command.error
@@ -1118,7 +1130,7 @@ class Music(commands.Cog):
             message = "Nothing is playing. "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("lyrics: ", err)
         await ctx.message.delete()
 
@@ -1143,7 +1155,7 @@ class Music(commands.Cog):
             timestamp=dt.datetime.utcnow(),
         )
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @clear_command.error
@@ -1153,7 +1165,7 @@ class Music(commands.Cog):
             message = "The queue is already empty. "
         if isinstance(err, NothingPlaying):
             message = "Nothing is currently playing. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("clear: ", err)
         await ctx.message.delete()
 
@@ -1187,7 +1199,7 @@ class Music(commands.Cog):
         player.queue.move(index + player.queue.position,
                           dest + player.queue.position)
 
-        await ctx.message.reply(content=f"Moved {player.queue.get(dest + player.queue.position)} to {dest+1}. ", delete_after=60)
+        await ctx.message.reply(content=f"Moved {player.queue.get(dest + player.queue.position)} to {dest+1}. ", delete_after=60, silent=True)
         await ctx.message.delete()
 
     @move_command.error
@@ -1201,12 +1213,12 @@ class Music(commands.Cog):
             message = "Nothing is currently in the queue. "
         if isinstance(err, SameValue):
             message = "Dumb to move to the same position :thinking: "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Cut
 
-    @commands.command(name="cut", aliases=["c"], help="NOT FULLY FIXED, maybe? not tested - Move the last song to the next spot in the queue. - {c}")
+    @commands.command(name="cut", aliases=["c"], help="Move the last song to the next spot in the queue. - {c}")
     async def cut_command(self, ctx: commands.Context):
         player: wavelink.Player = ctx.voice_client
 
@@ -1219,7 +1231,7 @@ class Music(commands.Cog):
 
         player.queue.put_at_front(track)
 
-        await ctx.message.reply(content=f"Moved the last song to the next spot in the queue. ", delete_after=60)
+        await ctx.message.reply(content=f"Moved the last song to the next spot in the queue. ", delete_after=60, silent=True)
         await ctx.message.delete()
 
     @cut_command.error
@@ -1229,7 +1241,7 @@ class Music(commands.Cog):
             message = "Nothing is currently in the queue. "
         if isinstance(err, TooShort):
             message = "The queue is too short. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("cut: ", err)
         await ctx.message.delete()
 
@@ -1262,7 +1274,7 @@ class Music(commands.Cog):
 
         player.queue.remove(index)
 
-        await ctx.message.reply(content=f"Removed {title} from the queue. ", delete_after=60)
+        await ctx.message.reply(content=f"Removed {title} from the queue. ", delete_after=60, silent=True)
         await ctx.message.delete()
 
     @remove_command.error
@@ -1274,7 +1286,7 @@ class Music(commands.Cog):
             message = "You need to provide a valid index. "
         if isinstance(err, NothingPlaying):
             message = "Nothing is currently in the queue. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("remove: ", err)
         await ctx.message.delete()
 
@@ -1298,7 +1310,7 @@ class Music(commands.Cog):
 
         embed.title = "Alvin and the chipmunks filter has been applied."
 
-        await ctx.message.reply(embed=embed, delete_after=60)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @alvin_command.error
@@ -1308,7 +1320,7 @@ class Music(commands.Cog):
             message = "Nothing is playing. "
         if isinstance(err, NoVoiceChannel):
             message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60)
+        await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("alvin: ", err)
         await ctx.message.delete()
 
