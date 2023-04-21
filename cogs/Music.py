@@ -477,7 +477,7 @@ class Music(commands.Cog):
             timestamp=dt.datetime.utcnow(),
             title="Loading songs..."
         )
-        message = await ctx.message.reply(embed=embed)
+        message = await ctx.message.reply(embed=embed, silent=True)
 
         if decoded and (decoded['type'] is spotify.SpotifySearchType.playlist or decoded['type'] is spotify.SpotifySearchType.album):
             async for track in spotify.SpotifyTrack.iterator(query=decoded["id"], type=decoded["type"]):
@@ -536,7 +536,7 @@ class Music(commands.Cog):
             value=""
         )
 
-        await message.edit(embed=embed, delete_after=120, silent=True)
+        await message.edit(embed=embed, delete_after=120)
         await ctx.message.delete()
 
     # Queue
