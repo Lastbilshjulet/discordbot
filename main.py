@@ -2,7 +2,9 @@
 from pathlib import Path
 import os
 import discord
+import wavelink
 from discord.ext import commands
+from wavelink.ext import spotify
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,8 +12,14 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = os.getenv("PREFIX")
 DISCORD_STATUS = discord.Game(
-        "w̶̡͌i̷͉̚t̷̘̎h̶̙̀ ̸̙͊ḧ̶̯́i̴̳̾ṡ̷͚ ̷̾͜f̷͈͛r̸̬̾i̴̢̎e̷̠͒ñ̶̥d̵͜͝s̸̮̆"
+    "w̶̡͌i̷͉̚t̷̘̎h̶̙̀ ̸̙͊ḧ̶̯́i̴̳̾ṡ̷͚ ̷̾͜f̷͈͛r̸̬̾i̴̢̎e̷̠͒ñ̶̥d̵͜͝s̸̮̆"
 )
+
+LAVALINK_PASS = os.getenv("LAVALINK_PASS")
+LAVALINK_ADDRESS = os.getenv("LAVALINK_ADDRESS")
+
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_id")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
 # --------------------
 #
@@ -32,16 +40,26 @@ class LabbeBot(commands.Bot):
 
         super().__init__(
             command_prefix=commands.when_mentioned_or(PREFIX),
-            case_insensitive=True, 
+            case_insensitive=True,
             intents=intents
         )
 
     async def setup_hook(self):
         self.bot_app_info = await self.application_info()
 
+        node = wavelink.Node(
+            uri=LAVALINK_ADDRESS,
+            password=LAVALINK_PASS
+        )
+        sc = spotify.SpotifyClient(
+            client_id=SPOTIFY_CLIENT_ID,
+            client_secret=SPOTIFY_CLIENT_SECRET
+        )
+        await wavelink.NodePool.connect(client=self, nodes=[node], spotify=sc)
+
     async def on_ready(self):
         self.client_id = (await self.application_info()).id
-        
+
         await self.change_presence(activity=DISCORD_STATUS)
         await self.initialize_cogs()
         await self.list_guilds()
@@ -75,6 +93,7 @@ class LabbeBot(commands.Bot):
     async def on_message(self, message):
         if not message.author.bot:
             await self.process_commands(message)
+
 
 bot = LabbeBot()
 
