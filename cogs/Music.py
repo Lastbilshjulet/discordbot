@@ -1,8 +1,6 @@
 import datetime as dt
 import re
-import os
 import typing as t
-from enum import Enum
 
 import aiohttp
 import discord
@@ -13,7 +11,12 @@ from discord.ext import commands
 from wavelink.ext import spotify
 
 VOLUME = 10
-URL_REGEX = r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
+SOUNDCLOUD_PLAYLIST_REGEX = r'^(https?:\/\/)?(www\.)?soundcloud\.com\/.*\/sets\/.*$'
+SOUNDCLOUD_TRACK_REGEX = r"^https:\/\/soundcloud\.com\/(?:[^\/]+\/){1}[^\/]+$"
+YOUTUBE_PLAYLIST_REGEX = r"(https://)(www\.)?(youtube\.com)\/(?:watch\?v=|playlist)?(?:.*)?&?(list=.*)"
+YOUTUBE_TRACK_REGEX = r"^https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_-]{11}$"
+YOUTUBEMUSIC_TRACK_REGEX = r"(?:https?:\/\/)?(?:www\.)?(?:music\.)?youtube\.com\/(?:watch\?v=|playlist\?list=)[\w-]+"
+BONK_IMAGE_URL = "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fi.pinimg.com%2Foriginals%2F17%2F09%2Faf%2F1709af090681fe39335b14b912ea8186.jpg&f=1&nofb=1&ipt=bf5bf1190abaa37c6585b4566656f36a62be067c5e0a37efa2167975197d02b2&ipo=images"
 LYRICS_URL = "Need new API"
 OPTIONS = {
     "1️⃣": 0,
@@ -37,6 +40,10 @@ class NotSameVoiceChannel(commands.CommandError):
 
 
 class NoSongProvided(commands.CommandError):
+    pass
+
+
+class NoSongFound(commands.CommandError):
     pass
 
 
@@ -102,7 +109,12 @@ class Music(commands.Cog):
             if not [m for m in before.channel.members if not m.bot]:
                 player: wavelink.Player = wavelink.NodePool.get_node().get_player(
                     before.channel.guild.id)
-                await player.disconnect()
+                if player:
+                    await player.disconnect()
+                    player.cleanup()
+                    player.queue.reset()
+                    if player.is_playing():
+                        await player.stop()
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, node: wavelink.Node):
@@ -114,56 +126,28 @@ class Music(commands.Cog):
             f"on_wavelink_track_start | player: {payload.player.guild.name}, track: {payload.track}")
 
     @commands.Cog.listener()
-    async def on_wavelink_track_end(self, payload: wavelink.TrackEventPayload):
-        if payload.reason != "FINISHED" or payload.reason != "STOPPED":
-            print(
-                f"on_wavelink_track_end | player: {payload.player.guild.name}, track: {payload.track}, reason: {payload.reason}")
+    async def on_wavelink_track_event(self, payload: wavelink.TrackEventPayload):
+        print(
+            f"on_wavelink_track_event | player: {payload.player.guild.name}, track: {payload.track}, event: {payload.event}")
 
-        player: wavelink.Player = payload.player
+        if payload.event is not wavelink.TrackEventType.START:
+            return
+
+        await payload.player.set_volume(VOLUME)
+
+        player = payload.player
+        track = payload.track
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
             colour=discord.Colour.from_rgb(209, 112, 2)
         )
-
-        autoplay = False
-        if player.queue.count == 0:
-            if player.autoplay == False or player.auto_queue.count == 0:
-                embed.title = "The queue is empty, play something new :rage:"
-                await player.text_channel.send(embed=embed, delete_after=60, silent=True)
-                return
-            else:
-                track = player.auto_queue.get()
-                autoplay = True
-        else:
-            track = player.queue.get()
-
-        await player.play(track=track, volume=VOLUME)
-
-        embed = discord.Embed()
-        embed.set_author(name=f"Now {'auto-' if autoplay else ''}playing")
+        embed.set_author(name="Now playing")
         duration = track.length
-        if isinstance(track, spotify.SpotifyTrack):
-            embed.description = f":notes: {track.title} ({self.format_duration(duration)})"
-        else:
-            embed.description = f":notes: [{track.title}]({track.uri}) ({self.format_duration(duration)})"
-        embed.set_footer(
-            text=f"By {player.author.display_name}", icon_url=player.author.display_avatar)
-        embed.colour = player.author.colour
-        embed.timestamp = dt.datetime.now()
-
-        try:
-            embed.set_thumbnail(url=track.thumbnail)
-        except:
-            pass
+        embed.description = f":notes: {self.format_track_title(track)} ({self.format_duration(track.length)})"
+        embed.set_footer(text=track.author, icon_url=BONK_IMAGE_URL)
 
         await player.text_channel.send(embed=embed, delete_after=duration/1000, silent=True)
-
-    @commands.Cog.listener()
-    async def on_wavelink_track_event(self, payload: wavelink.TrackEventPayload):
-        if payload.event != wavelink.TrackEventType.END and payload.event != wavelink.TrackEventType.START:
-            print(
-                f"on_wavelink_track_event | player: {payload.player.guild.name}, track: {payload.track}, event: {payload.event}")
 
     async def cog_check(self, ctx: commands.Context):
         if isinstance(ctx.channel, discord.DMChannel):
@@ -179,6 +163,12 @@ class Music(commands.Cog):
     def format_duration(self, length):
         return f"{int(length//60000)}:{str(int((length/1000) % 60)).zfill(2)}"
 
+    def format_track_title(self, track):
+        if isinstance(track, spotify.SpotifyTrack):
+            return track.title
+        else:
+            return f"[{track.title}]({track.uri})"
+
     # --------------------
     #
     #       Commands
@@ -188,12 +178,12 @@ class Music(commands.Cog):
     # Connect
 
     @commands.command(name="connect", aliases=["join"], help="Make the bot connect to your voice channel. - {join}")
-    async def connect_command(self, ctx: commands.Context, *, channel: t.Optional[discord.VoiceChannel]):
-        player, channel = await self.connect(ctx, channel)
+    async def connect_command(self, ctx: commands.Context):
+        await self.connect(ctx)
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour,
         )
         embed.title = "Connected. "
 
@@ -204,36 +194,42 @@ class Music(commands.Cog):
     async def connect_command_error(self, ctx: commands.Context, err):
         message = "Error. "
         if isinstance(err, NoVoiceChannel):
-            message = "You need to be connected to, or supply a channel for me to connect to. "
+            message = "You need to be connected to a voice channel for me to connect to. "
         await ctx.message.reply(content=message, delete_after=60, silent=True)
         print("connect: ", err)
         await ctx.message.delete()
 
-    async def connect(self, ctx: commands.Context, channel):
-        if channel is None:
-            try:
-                channel = ctx.author.voice.channel
-            except AttributeError:
-                raise NoVoiceChannel
+    async def connect(self, ctx: commands.Context):
+        channel = None
+        try:
+            channel = ctx.author.voice.channel
+        except AttributeError:
+            raise NoVoiceChannel
 
         if not ctx.voice_client:
-            player: wavelink.Player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
+            player: wavelink.Player = await channel.connect(cls=wavelink.Player)
         else:
-            await player.move_to(ctx.author.voice.channel)
+            player: wavelink.Player = ctx.voice_client
 
-        return player, channel
+        return player
 
     # Disconnect
 
     @commands.command(name="disconnect", aliases=["dc", "leave"], help="Make the bot disconnect from current voice channel. - {dc, leave}")
     async def disconnect_command(self, ctx: commands.Context):
         player: wavelink.Player = self.check_if_connected(ctx)
-
-        await player.disconnect()
+        if not player:
+            raise NoVoiceChannel
+        else:
+            await player.disconnect()
+            player.cleanup()
+            player.queue.reset()
+            if player.is_playing():
+                await player.stop()
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = "Disconnected. "
 
@@ -258,13 +254,14 @@ class Music(commands.Cog):
         if not player.is_playing() and player.queue.is_empty:
             raise NothingPlaying
 
-        player.queue.clear()
+        player.queue.reset()
+        player.auto_queue.reset()
 
         await player.stop()
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = "Stopped the player and cleared the queue. "
 
@@ -288,78 +285,99 @@ class Music(commands.Cog):
     async def play_command(
         self,
         ctx: commands.Context,
-        *,
-        track: t.Optional[t.Union[
-            wavelink.YouTubeTrack,
-            wavelink.YouTubeMusicTrack,
-            wavelink.SoundCloudTrack,
-            wavelink.ext.spotify.SpotifyTrack
-        ]]
+        query: t.Optional[str]
     ):
-        if not track:
+        player: wavelink.Player = await self.connect(ctx)
+
+        if not query:
             raise NoSongProvided
 
-        await self.play_track(ctx, track)
-        await self.print_play_message(ctx, track)
+        track = None
+        decoded = spotify.decode_url(query)
+        if decoded and decoded['type'] is spotify.SpotifySearchType.track:
+            track = await spotify.SpotifyTrack.search(query)
+        elif re.fullmatch(YOUTUBE_TRACK_REGEX, query.split('&')[0]):
+            tracks = await player.current_node.get_tracks(
+                cls=wavelink.YouTubeTrack, query=query.split('&')[0])
+            track = tracks[0]
+        elif re.fullmatch(YOUTUBEMUSIC_TRACK_REGEX, query.split('&')[0]):
+            tracks = await player.current_node.get_tracks(
+                cls=wavelink.YouTubeMusicTrack, query=query.split('&')[0])
+            track = tracks[0]
+        elif re.fullmatch(SOUNDCLOUD_TRACK_REGEX, query.split('?')[0]):
+            tracks = await player.current_node.get_tracks(
+                cls=wavelink.SoundCloudTrack, query=query.split('?')[0])
+            track = tracks[0]
+        else:
+            try:
+                track = await wavelink.YouTubeTrack.search(query, return_first=True)
+            except wavelink.NoTracksError:
+                raise NoSongFound
+
+        if not track:
+            raise NoSongFound
+
+        await self.play_track(ctx, track, True)
+        await ctx.message.delete()
 
     @play_command.error
     async def play_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
         if isinstance(err, NoVoiceChannel):
-            message = "You need to be connected to a voice channel to play music. "
-        if isinstance(err, NoSongProvided):
-            message = "No song is was provided. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("play: ", err)
+            embed.title = "You need to be connected to a voice channel to play music. "
+        elif isinstance(err, NoSongProvided):
+            embed.title = "No song is was provided. "
+        elif isinstance(err, NoSongFound):
+            embed.title = "No song was found. "
+        else:
+            embed.title = "Unexpected error. "
+            print("play: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Play extracted
 
-    async def play_track(self, ctx: commands.Context, track: wavelink.tracks.Playable):
-        player = ctx.voice_client
-
-        try:
-            channel = ctx.author.voice.channel
-        except AttributeError:
-            raise NoVoiceChannel
-
-        if not player:
-            player, channel = await self.connect(ctx, channel=channel)
+    async def play_track(self, ctx: commands.Context, track: wavelink.tracks.Playable, print: bool):
+        player: wavelink.Player = self.check_if_connected(ctx)
 
         player.text_channel = ctx.channel
-        player.author = ctx.author
+        player.autoplay = True
+
+        if isinstance(track, spotify.SpotifyTrack):
+            player.auto_queue.reset()
 
         if not player.is_playing():
-            player.queue.history.put_at_front(track)
-            await player.play(track=track, volume=VOLUME)
+            await player.play(track=track, volume=VOLUME, populate=True)
         else:
             await player.queue.put_wait(track)
+            if print:
+                await self.print_play_message(ctx, track)
 
     # Print play extracted
 
     async def print_play_message(self, ctx: commands.Context, track: wavelink.Playable):
-        player: wavelink.Player = ctx.voice_client
-
-        embed = discord.Embed()
-        if player.current is track:
-            embed.set_author(name="Now playing")
-            duration = track.length
-        else:
-            embed.set_author(name="Added to queue")
-            duration = 60
-
-        embed.description = f":notes: [{track.title}]({track.uri}) ({self.format_duration(track.length)})"
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        embed.set_author(name="Added to queue")
         embed.set_footer(
             text=f"By {ctx.author.display_name}", icon_url=ctx.author.display_avatar)
-        embed.colour = ctx.author.colour
-        embed.timestamp = dt.datetime.now()
+        embed.description = f":notes: {self.format_track_title(track)} ({self.format_duration(track.length)})"
 
         try:
-            embed.set_thumbnail(url=track.thumbnail)
+            thumbnail = await track.fetch_thumbnail()
+            if thumbnail:
+                embed.set_thumbnail(url=thumbnail)
         except:
             pass
 
-        await ctx.send(embed=embed, delete_after=duration/1000, silent=True)
+        await ctx.send(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Search
@@ -372,6 +390,7 @@ class Music(commands.Cog):
                 and u == ctx.author
                 and r.message.id == message.id
             )
+        await self.connect(ctx)
 
         if not query:
             raise NoSongProvided
@@ -385,7 +404,7 @@ class Music(commands.Cog):
             title="Choose a song",
             description=(
                 "\n".join(
-                    f"**{i+1}.** [{t.title}]({t.uri}) ({self.format_duration(t.length)})" for i, t in enumerate(tracks[:5]))
+                    f"**{i+1}.** {self.format_track_title(t)} ({self.format_duration(t.length)})" for i, t in enumerate(tracks[:5]))
             ),
             colour=ctx.author.colour,
             timestamp=dt.datetime.now()
@@ -407,8 +426,7 @@ class Music(commands.Cog):
         else:
             await message.delete()
             track = tracks[OPTIONS[reaction.emoji]]
-            await self.play_track(ctx, track)
-            await self.print_play_message(ctx, track)
+            await self.play_track(ctx, track, True)
 
     @search_command.error
     async def search_command_error(self, ctx: commands.Context, err):
@@ -426,22 +444,12 @@ class Music(commands.Cog):
     # Playlist
 
     @commands.command(name="playlist", aliases=["pl"], help="Queue a whole playlist, youtube or spotify. - {pl}")
-    async def playlist_command(
-        self,
-        ctx: commands.Context,
-        tracks: t.Union[
-            wavelink.YouTubePlaylist,
-            str
-        ]
-    ):
-        if not tracks:
+    async def playlist_command(self, ctx: commands.Context, query: t.Optional[str]):
+        player: wavelink.Player = await self.connect(ctx)
+
+        if not query:
             raise NoSongProvided
 
-        tracksForPrint = []
-
-        decoded = None
-        if not isinstance(tracks, wavelink.YouTubePlaylist):
-            decoded = spotify.decode_url(tracks)
         embed = discord.Embed(
             colour=ctx.author.colour,
             timestamp=dt.datetime.utcnow(),
@@ -449,15 +457,20 @@ class Music(commands.Cog):
         )
         message = await ctx.message.reply(embed=embed, silent=True)
 
+        tracksForPrint = []
+        yt_playlist = None
+        decoded = spotify.decode_url(query)
         if decoded and (decoded['type'] is spotify.SpotifySearchType.playlist or decoded['type'] is spotify.SpotifySearchType.album):
-            await self.play_track(ctx, track)
-            tracksForPrint.append(track)
+            async for track in spotify.SpotifyTrack.iterator(query=query):
+                await self.play_track(ctx, track, False)
+                tracksForPrint.append(track)
         else:
-            for track in tracks.tracks:
-                await self.play_track(ctx, track)
+            yt_playlist: wavelink.YouTubePlaylist = await wavelink.YouTubePlaylist.search(query)
+            for track in yt_playlist.tracks:
+                await self.play_track(ctx, track, False)
                 tracksForPrint.append(track)
 
-        await self.print_playlist_message(ctx, message, tracks, tracksForPrint)
+        await self.print_playlist_message(ctx, message, query, tracksForPrint, yt_playlist)
 
     @playlist_command.error
     async def playlist_command_error(self, ctx: commands.Context, err):
@@ -474,29 +487,26 @@ class Music(commands.Cog):
 
     # Print playlist extracted
 
-    async def print_playlist_message(self, ctx: commands.Context, message, playlist, tracks):
+    async def print_playlist_message(self, ctx: commands.Context, message, query, tracks, yt_playlist):
         embed = discord.Embed(
             colour=ctx.author.colour,
             timestamp=dt.datetime.now(),
             title=f"Queueing a playlist - {len(tracks)} - {self.format_duration(sum(t.duration for t in tracks))}"
         )
 
-        if isinstance(playlist, wavelink.YouTubePlaylist):
-            embed.description = f"{playlist.name}"
+        if yt_playlist:
+            embed.description = f"[{yt_playlist.name}]({query})"
         else:
-            embed.description = f"[Spotify Playlist]({playlist})"
+            embed.description = f"[Spotify Playlist]({query})"
 
         embed.set_footer(
             text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar)
 
         value = ""
         for i, t in enumerate(tracks):
-            if len(value) > 900:
+            if len(value) > 850:
                 break
-            if isinstance(t, wavelink.YouTubeMusicTrack) or isinstance(t, wavelink.YouTubeTrack):
-                value += f"**{i+1}.** [{t.title}]({t.uri}) ({self.format_duration(t.length)})\n"
-            else:
-                value += f"**{i+1}.** {t.title} ({self.format_duration(t.length)})\n"
+            value += f"**{i+1}.** {self.format_track_title(t)} ({self.format_duration(t.length)})\n"
 
         embed.add_field(
             name="Queued songs",
@@ -508,7 +518,7 @@ class Music(commands.Cog):
             value=""
         )
 
-        await message.edit(embed=embed, delete_after=120)
+        await message.edit(embed=embed, delete_after=600)
         await ctx.message.delete()
 
     # Queue
@@ -544,10 +554,11 @@ class Music(commands.Cog):
             embed.title = f"Queue - {str(player.queue.count)} - {self.format_duration((track.length - player.position) + sum(t.duration for t in player.queue))}"
             embed.description = f"Showing up to the next {show} tracks"
 
+        value = f"**1.** {self.format_track_title(track)}  - {self.format_duration(player.position)}/{self.format_duration(track.length)}"
+
         embed.add_field(
             name="Currently playing",
-            value=f"**1.** [{track.title}]({track.uri})" +
-            f" - {self.format_duration(player.position)}/{self.format_duration(track.length)}",
+            value=value,
             inline=False
         )
 
@@ -556,10 +567,10 @@ class Music(commands.Cog):
         for i, t in enumerate(player.queue):
             if i == show-1:
                 break
-            if len(value) > 900:
+            if len(value) > 850:
                 fieldvalues.append(value)
                 value = ""
-            value += f"**{i+2}.** [{t.title}]({t.uri}) ({self.format_duration(t.length)})\n"
+            value += f"**{i+2}.** {self.format_track_title(t)} ({self.format_duration(t.length)})\n"
         fieldvalues.append(value)
 
         for i, value in enumerate(fieldvalues):
@@ -623,10 +634,10 @@ class Music(commands.Cog):
         for i, t in enumerate(player.queue.history):
             if i + threshold == player.queue.history.count:
                 break
-            if len(value) > 900:
+            if len(value) > 850:
                 fieldvalues.append(value)
                 value = ""
-            value += f"**{i+1}.** [{t.title}]({t.uri}) ({self.format_duration(t.length)})\n"
+            value += f"**{i+1}.** {self.format_track_title(t)} ({self.format_duration(t.length)})\n"
         fieldvalues.append(value)
 
         for i, value in enumerate(fieldvalues):
@@ -674,7 +685,7 @@ class Music(commands.Cog):
 
         embed.add_field(
             name="Track title",
-            value=f"[{track.title}]({track.uri})",
+            value=self.format_track_title(track),
             inline=False
         )
 
@@ -692,6 +703,12 @@ class Music(commands.Cog):
 
         embed.set_footer(
             text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar)
+
+        try:
+            thumbnail = await track.fetch_thumbnail()
+            embed.set_thumbnail(url=thumbnail)
+        except:
+            pass
 
         duration = track.length - player.position
 
@@ -751,7 +768,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
 
         if player.is_paused():
@@ -777,7 +794,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = "⏭ Skipped song. "
 
@@ -812,11 +829,11 @@ class Music(commands.Cog):
             player.queue.put_at_front(player.queue.history[-2])
             await player.stop()
         else:
-            await self.play_track(ctx=ctx, track=player.queue.history[-2])
+            await self.play_track(ctx=ctx, track=player.queue.history[-2], print=False)
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
 
         embed.set_author(name="This command is not 100% fixed")
@@ -842,7 +859,7 @@ class Music(commands.Cog):
 
     # Shuffle
 
-    @commands.command(name="shuffle", help="Shuffle the queue. ")
+    @commands.command(name="shuffle", help="Shuffle the queue - not very random. ")
     async def shuffle_command(self, ctx: commands.Context):
         player: wavelink.Player = self.check_if_connected(ctx)
 
@@ -863,7 +880,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = "🔀 Shuffled the queue. "
 
@@ -881,27 +898,27 @@ class Music(commands.Cog):
 
     # Loop
 
-    # @commands.DisabledCommand
-    @commands.command(name="loop", aliases=["repeat"], help="BROKEN - Loops either the song or the queue. - {repeat}")
-    async def repeat_command(self, ctx: commands.Context):
+    @commands.command(name="loop", aliases=["repeat"], help="Loops, accepts [song / queue / stop], defaults to stop. - {repeat}")
+    async def repeat_command(self, ctx: commands.Context, query: t.Optional[str] = "song"):
         player: wavelink.Player = self.check_if_connected(ctx)
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
 
-        if not player.queue.loop and not player.queue.loop_all:
+        if query.lower() == "song":
             player.queue.loop = True
+            player.queue.loop_all = False
             embed.title = "🔁 Looping the song. "
-        elif player.queue.loop and not player.queue.loop_all:
+        elif query.lower() == "queue":
             player.queue.loop = False
             player.queue.loop_all = True
-            embed.title = "🔁 Looping the playlist. "
+            embed.title = "🔁 Looping the queue. "
         else:
             player.queue.loop = False
             player.queue.loop_all = False
-            embed.title = "🔁 Stopped loop. "
+            embed.title = "⏹ Stopped loop. "
 
         await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
@@ -928,7 +945,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = "⏪ Restarting track. "
 
@@ -965,7 +982,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = f"Seeked to {position} seconds into the song. "
 
@@ -1000,7 +1017,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
 
         if value is None:
@@ -1168,7 +1185,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = f"Moved {move_track.title} to {dest + 1}. "
 
@@ -1204,7 +1221,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = f"Moved the last song to the next spot in the queue. "
 
@@ -1255,7 +1272,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
         embed.title = f"Removed {title} from the queue. "
 
@@ -1288,7 +1305,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
 
         embed.title = "Alvin and the chipmunks filter has been applied."
@@ -1309,7 +1326,7 @@ class Music(commands.Cog):
 
     # Autoplay
 
-    @commands.command(name="autoplay", aliases=["ap"], help="Toggle youtube autoplay. - {a}")
+    @commands.command(name="autoplay", aliases=["ap"], help="Toggle autoplay of songs. - {a}")
     async def autoplay_command(self, ctx: commands.Context):
         player: wavelink.Player = self.check_if_connected(ctx)
 
@@ -1317,7 +1334,7 @@ class Music(commands.Cog):
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
-            colour=discord.Colour.from_rgb(209, 112, 2)
+            colour=ctx.author.colour
         )
 
         embed.title = f"Autoplay has been turned {'on' if (player.autoplay) else 'off'}."
