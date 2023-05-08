@@ -27,15 +27,15 @@ OPTIONS = {
 }
 
 
-class AlreadyConnectedToChannel(commands.CommandError):
+class NoPlayerFound(commands.CommandError):
+    pass
+
+
+class NoSongPlaylistInstead(commands.CommandError):
     pass
 
 
 class NoVoiceChannel(commands.CommandError):
-    pass
-
-
-class NotSameVoiceChannel(commands.CommandError):
     pass
 
 
@@ -117,18 +117,9 @@ class Music(commands.Cog):
                         await player.stop()
 
     @commands.Cog.listener()
-    async def on_wavelink_node_ready(self, node: wavelink.Node):
-        print(f"Wavelink node {node.identifier} ready. \n")
-
-    @commands.Cog.listener()
-    async def on_wavelink_track_start(self, payload: wavelink.TrackEventPayload):
-        print(
-            f"on_wavelink_track_start | player: {payload.player.guild.name}, track: {payload.track}")
-
-    @commands.Cog.listener()
     async def on_wavelink_track_event(self, payload: wavelink.TrackEventPayload):
         print(
-            f"on_wavelink_track_event | player: {payload.player.guild.name}, track: {payload.track}, event: {payload.event}")
+            f"{payload.event.name: <5} | guild: {payload.player.guild.name: <11} - {payload.track}")
 
         if payload.event is not wavelink.TrackEventType.START:
             return
@@ -155,17 +146,23 @@ class Music(commands.Cog):
             return False
         return True
 
-    def check_if_connected(self, ctx):
+    def check_if_player_available(self, ctx: commands.Context):
         if not ctx.voice_client:
-            raise NoVoiceChannel
+            raise NoPlayerFound
         return ctx.voice_client
+
+    def check_if_user_connected(self, ctx: commands.Context) -> discord.VoiceChannel:
+        try:
+            return ctx.author.voice.channel
+        except AttributeError:
+            raise NoVoiceChannel
 
     def format_duration(self, length):
         return f"{int(length//60000)}:{str(int((length/1000) % 60)).zfill(2)}"
 
     def format_track_title(self, track):
         if isinstance(track, spotify.SpotifyTrack):
-            return track.title
+            return f"{track.title} - {', '.join(track.artists)}"
         else:
             return f"[{track.title}]({track.uri})"
 
@@ -192,19 +189,22 @@ class Music(commands.Cog):
 
     @connect_command.error
     async def connect_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
         if isinstance(err, NoVoiceChannel):
             message = "You need to be connected to a voice channel for me to connect to. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("connect: ", err)
+        else:
+            embed.title = "Unexpected error. "
+            print("connect: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     async def connect(self, ctx: commands.Context):
-        channel = None
-        try:
-            channel = ctx.author.voice.channel
-        except AttributeError:
-            raise NoVoiceChannel
+        channel: discord.VoiceChannel = self.check_if_user_connected()
 
         if not ctx.voice_client:
             player: wavelink.Player = await channel.connect(cls=wavelink.Player)
@@ -217,15 +217,14 @@ class Music(commands.Cog):
 
     @commands.command(name="disconnect", aliases=["dc", "leave"], help="Make the bot disconnect from current voice channel. - {dc, leave}")
     async def disconnect_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
-        if not player:
-            raise NoVoiceChannel
-        else:
-            await player.disconnect()
-            player.cleanup()
-            player.queue.reset()
-            if player.is_playing():
-                await player.stop()
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
+
+        await player.disconnect()
+        player.cleanup()
+        player.queue.reset()
+        if player.is_playing():
+            await player.stop()
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
@@ -238,18 +237,28 @@ class Music(commands.Cog):
 
     @disconnect_command.error
     async def disconnect_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("disconnect: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to disconnect. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to disconnect me. "
+        else:
+            embed.title = "Unexpected error. "
+            print("disconnect: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Stop
 
     @commands.command(name="stop", help="Clear the queue and stop the player. ")
     async def stop_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
 
         if not player.is_playing() and player.queue.is_empty:
             raise NothingPlaying
@@ -270,13 +279,22 @@ class Music(commands.Cog):
 
     @stop_command.error
     async def stop_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("stop: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to stop the music. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to even hear the music, why would you stop it?"
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is playing. "
+        else:
+            embed.title = "Unexpected error. "
+            print("stop: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Play
@@ -296,6 +314,8 @@ class Music(commands.Cog):
         decoded = spotify.decode_url(query)
         if decoded and decoded['type'] is spotify.SpotifySearchType.track:
             track = await spotify.SpotifyTrack.search(query)
+        elif decoded and (decoded['type'] is spotify.SpotifySearchType.playlist or decoded['type'] is spotify.SpotifySearchType.album or re.fullmatch(YOUTUBE_PLAYLIST_REGEX, query)):
+            raise NoSongPlaylistInstead
         elif re.fullmatch(YOUTUBE_TRACK_REGEX, query.split('&')[0]):
             tracks = await player.current_node.get_tracks(
                 cls=wavelink.YouTubeTrack, query=query.split('&')[0])
@@ -328,6 +348,8 @@ class Music(commands.Cog):
         )
         if isinstance(err, NoVoiceChannel):
             embed.title = "You need to be connected to a voice channel to play music. "
+        elif isinstance(err, NoSongPlaylistInstead):
+            embed.title = "This command only takes singular tracks, if you want to play a playlist use -playlist or -pl. "
         elif isinstance(err, NoSongProvided):
             embed.title = "No song is was provided. "
         elif isinstance(err, NoSongFound):
@@ -343,7 +365,7 @@ class Music(commands.Cog):
     # Play extracted
 
     async def play_track(self, ctx: commands.Context, track: wavelink.tracks.Playable, print: bool):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
 
         player.text_channel = ctx.channel
         player.autoplay = True
@@ -430,22 +452,29 @@ class Music(commands.Cog):
 
     @search_command.error
     async def search_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
         if isinstance(err, NoTracksFound):
-            message = "Could not find a song. "
-        if isinstance(err, NoVoiceChannel):
-            message = "You need to be connected to a voice channel to play music. "
-        if isinstance(err, NoSongProvided):
-            message = "No song was provided. . "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("search: ", err)
+            embed.title = "Could not find a song. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to play music. "
+        elif isinstance(err, NoSongProvided):
+            embed.title = "No song was provided. . "
+        else:
+            embed.title = "Unexpected error. "
+            print("search: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Playlist
 
     @commands.command(name="playlist", aliases=["pl"], help="Queue a whole playlist, youtube or spotify. - {pl}")
     async def playlist_command(self, ctx: commands.Context, query: t.Optional[str]):
-        player: wavelink.Player = await self.connect(ctx)
+        await self.connect(ctx)
 
         if not query:
             raise NoSongProvided
@@ -466,6 +495,8 @@ class Music(commands.Cog):
                 tracksForPrint.append(track)
         else:
             yt_playlist: wavelink.YouTubePlaylist = await wavelink.YouTubePlaylist.search(query)
+            if not yt_playlist:
+                raise NoTracksFound
             for track in yt_playlist.tracks:
                 await self.play_track(ctx, track, False)
                 tracksForPrint.append(track)
@@ -474,15 +505,22 @@ class Music(commands.Cog):
 
     @playlist_command.error
     async def playlist_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        if isinstance(err, NoSongProvided):
-            message = "No song was provided. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("playlist: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoTracksFound):
+            embed.title = "Could not find any songs. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to play music. "
+        elif isinstance(err, NoSongProvided):
+            embed.title = "No playlist was provided. "
+        else:
+            embed.title = "Unexpected error. "
+            print("playlist: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Print playlist extracted
@@ -525,7 +563,7 @@ class Music(commands.Cog):
 
     @commands.command(name="queue", aliases=["q"], help="Displays the queue. - {q}")
     async def queue_command(self, ctx: commands.Context, show: t.Optional[str] = "10"):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
 
         if player.queue.is_empty and not player.is_playing():
             raise QueueIsEmpty
@@ -592,85 +630,31 @@ class Music(commands.Cog):
 
     @queue_command.error
     async def queue_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        if isinstance(err, QueueIsEmpty):
-            message = "The queue is currently empty. "
-        if isinstance(err, NotDigit):
-            message = "The value must be a digit. "
-        if isinstance(err, TooShort):
-            message = "The value must be over 1, try -np if you want the currently playing song.  "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("queue: ", err)
-        await ctx.message.delete()
-
-    # History - NOT FIXED need to copy and reverse
-
-    # @commands.DisabledCommand
-    @commands.command(name="history", aliases=["h"], help="BROKEN - Displays the previously played songs. - {h}")
-    async def history_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
-
-        threshold = 0
-        if player.is_playing():
-            threshold = 1
-
-        if player.queue.history.count <= threshold:
-            raise NoPreviousTracks
-
         embed = discord.Embed(
-            title="History - " + str(player.queue.history.count - threshold),
-            description=f"Showing previously played tracks",
-            colour=ctx.author.colour,
-            timestamp=dt.datetime.now()
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
         )
-        embed.set_author(name="This command is not 100% fixed")
-        embed.set_footer(
-            text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar)
-
-        fieldvalues = []
-        value = ""
-        for i, t in enumerate(player.queue.history):
-            if i + threshold == player.queue.history.count:
-                break
-            if len(value) > 850:
-                fieldvalues.append(value)
-                value = ""
-            value += f"**{i+1}.** {self.format_track_title(t)} ({self.format_duration(t.length)})\n"
-        fieldvalues.append(value)
-
-        for i, value in enumerate(fieldvalues):
-            if (len(embed) > 5000):
-                break
-            name = "Previously played"
-            if i > 0:
-                name = "More"
-            embed.add_field(
-                name=name,
-                value=value,
-                inline=False
-            )
-
-        await ctx.message.reply(embed=embed, delete_after=120, silent=True)
-        await ctx.message.delete()
-
-    @history_command.error
-    async def history_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        if isinstance(err, NoPreviousTracks):
-            message = "No songs in history. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("history: ", err)
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to display a queue. "
+        elif isinstance(err, QueueIsEmpty):
+            embed.title = "The queue is currently empty. "
+        elif isinstance(err, NotDigit):
+            embed.title = "The value must be a digit. "
+        elif isinstance(err, TooShort):
+            embed.title = "The value must be over 1, try -np if you want the currently playing song.  "
+        else:
+            embed.title = "Unexpected error. "
+            print("queue: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Nowplaying
 
     @commands.command(name="nowplaying", aliases=["playing", "np", "current"], help="Displaying the currently playing song. - {np, current, playing}")
     async def nowplaying_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
 
         if not player.is_playing():
             raise NothingPlaying
@@ -717,13 +701,20 @@ class Music(commands.Cog):
 
     @nowplaying_command.error
     async def nowplaying_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("nowplaying: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to display what song is playing. "
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is currently playing. "
+        else:
+            embed.title = "Unexpected error. "
+            print("nowplaying: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Pause
@@ -734,13 +725,20 @@ class Music(commands.Cog):
 
     @pause_command.error
     async def pause_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("pause: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to pause the music. "
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is currently playing. "
+        else:
+            embed.title = "Unexpected error. "
+            print("pause: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Resume
@@ -751,17 +749,24 @@ class Music(commands.Cog):
 
     @resume_command.error
     async def resume_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("resume: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to resume the music. "
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is currently playing. "
+        else:
+            embed.title = "Unexpected error. "
+            print("resume: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     async def toggle_pause(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
 
         if not player.is_playing():
             raise NothingPlaying
@@ -785,7 +790,8 @@ class Music(commands.Cog):
 
     @commands.command(name="next", aliases=["skip", "n", "s"], help="Advance to the next song. - {skip, n, s}")
     async def next_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
 
         if not player.is_playing():
             raise NothingPlaying
@@ -803,65 +809,29 @@ class Music(commands.Cog):
 
     @next_command.error
     async def next_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("next: ", err)
-        await ctx.message.delete()
-
-    # Previous - NOT FIXED need to copy and remove tracks being added over and over
-
-    # @commands.DisabledCommand
-    @commands.command(name="previous", aliases=["back, prev"], help="BROKEN - Go to the previous song. - {back, prev}")
-    async def previous_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
-
-        if not player.is_playing():
-            raise NothingPlaying
-
-        if player.queue.history.count == 0:
-            raise NoPreviousTracks
-
-        if player.is_playing():
-            player.queue.put_at_front(player.queue.history[-2])
-            await player.stop()
-        else:
-            await self.play_track(ctx=ctx, track=player.queue.history[-2], print=False)
-
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
             colour=ctx.author.colour
         )
-
-        embed.set_author(name="This command is not 100% fixed")
-        embed.title = "⏮ Playing previous track. "
-
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to skip songs. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to skip songs. "
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is currently playing. "
+        else:
+            embed.title = "Unexpected error. "
+            print("next: ")
+            print(ctx.message.content)
+            print(err)
         await ctx.message.reply(embed=embed, delete_after=60, silent=True)
-        await ctx.message.delete()
-
-    @previous_command.error
-    async def previous_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        if isinstance(err, QueueIsEmpty):
-            message = "Queue is empty. "
-        if isinstance(err, NoPreviousTracks):
-            message = "No songs in history. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("previous: ", err)
         await ctx.message.delete()
 
     # Shuffle
 
     @commands.command(name="shuffle", help="Shuffle the queue - not very random. ")
     async def shuffle_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
 
         if player.queue.is_empty:
             raise QueueIsEmpty
@@ -889,18 +859,27 @@ class Music(commands.Cog):
 
     @shuffle_command.error
     async def shuffle_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, QueueIsEmpty):
-            message = "Can't shuffle, the queue is empty. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("shuffle: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to shuffle the queue. "
+        elif isinstance(err, QueueIsEmpty):
+            embed.title = "Can't shuffle an empty queue. "
+        else:
+            embed.title = "Unexpected error. "
+            print("shuffle: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Loop
 
     @commands.command(name="loop", aliases=["repeat"], help="Loops, accepts [song / queue / stop], defaults to stop. - {repeat}")
-    async def repeat_command(self, ctx: commands.Context, query: t.Optional[str] = "song"):
-        player: wavelink.Player = self.check_if_connected(ctx)
+    async def loop_command(self, ctx: commands.Context, query: t.Optional[str] = "song"):
+        player: wavelink.Player = self.check_if_player_available(ctx)
 
         embed = discord.Embed(
             timestamp=dt.datetime.now(),
@@ -923,20 +902,28 @@ class Music(commands.Cog):
         await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
-    @repeat_command.error
-    async def repeat_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("repeat: ", err)
+    @loop_command.error
+    async def loop_command_error(self, ctx: commands.Context, err):
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to loop. "
+        else:
+            embed.title = "Unexpected error. "
+            print("loop: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Restart
 
     @commands.command(name="restart", aliases=["replay"], help="Restart the currently playing song. - {replay}")
     async def restart_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
 
         if not player.is_playing():
             raise NothingPlaying
@@ -954,20 +941,30 @@ class Music(commands.Cog):
 
     @restart_command.error
     async def restart_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("restart: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to restart a song. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to restart a song. "
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is currently playing. "
+        else:
+            embed.title = "Unexpected error. "
+            print("restart: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Seek
 
     @commands.command(name="seek", help="Seek a place in the song playing by seconds. ")
     async def seek_command(self, ctx: commands.Context, position: str):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
 
         if not player.is_playing():
             raise NothingPlaying
@@ -991,26 +988,36 @@ class Music(commands.Cog):
 
     @seek_command.error
     async def seek_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, InvalidTimeString):
-            message = "Not a valid time value. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        if isinstance(err, InvalidPosition):
-            message = "Taht's too far into the song. "
-        if isinstance(err, commands.MissingRequiredArgument):
-            message = "You need to provide a value for the number of messages to be deleted. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("seek: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to restart a song. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to restart a song. "
+        elif isinstance(err, InvalidPosition):
+            embed.title = "That's too far into the song. "
+        elif isinstance(err, InvalidTimeString):
+            embed.title = "Not a valid time value. "
+        elif isinstance(err, commands.MissingRequiredArgument):
+            embed.title = "You need to provide the value you want to seek to. "
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is currently playing. "
+        else:
+            embed.title = "Unexpected error. "
+            print("seek: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Volume
 
     @commands.command(name="volume", aliases=["vol"], help="Set the new value for the volume. - {vol}")
     async def volume_command(self, ctx: commands.Context, value: t.Optional[str] = None):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
 
         if not player.is_playing():
             raise NothingPlaying
@@ -1024,7 +1031,7 @@ class Music(commands.Cog):
             embed.title = f"Current volume is set to {player.volume}%. "
         else:
             if not value.isdigit():
-                raise InvalidTimeString
+                raise NotDigit
 
             if int(value) <= 0:
                 raise TooLowVolume
@@ -1039,81 +1046,36 @@ class Music(commands.Cog):
 
     @volume_command.error
     async def volume_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, InvalidTimeString):
-            message = "Not a valid volume value. "
-        if isinstance(err, QueueIsEmpty):
-            message = "Nothing is currently playing. "
-        if isinstance(err, TooLowVolume):
-            message = "Volume must be higher than 0. "
-        if isinstance(err, TooHighVolume):
-            message = "Volume must be lower than 200. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing.  "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("volume: ", err)
-        await ctx.message.delete()
-
-    # Lyrics
-
-    # @commands.DisabledCommand
-    @commands.command(name="lyrics", help="BROKEN - Prints the lyrics out if possible. ")
-    async def lyrics_command(self, ctx: commands.Context, name: t.Optional[str]):
-        player: wavelink.Player = self.check_if_connected(ctx)
-
-        if not player.is_playing() and name is None:
-            raise NothingPlaying
-
-        name = name or player.current.title
-
-        async with ctx.typing():
-            async with aiohttp.request("GET", LYRICS_URL + name, headers={}) as r:
-                if not 200 <= r.status <= 299:
-                    raise NoLyricsFound
-
-                data = await r.json()
-
-                embed = discord.Embed(
-                    title=data["title"],
-                    colour=ctx.author.colour,
-                    timestamp=dt.datetime.now(),
-                )
-
-                if len(data["lyrics"]) > 2000:
-                    embed.description = f"<{data['links']['genius']}>"
-                else:
-                    embed.description = data["lyrics"]
-
-                embed.set_thumbnail(url=data["thumbnail"]["genius"])
-                embed.set_author(name=data["author"])
-
-                duration = 180
-                if player.is_playing():
-                    duration = player.position
-
-                await ctx.message.reply(embed=embed, delete_after=duration/1000, silent=True)
-                await ctx.message.delete()
-
-    @lyrics_command.error
-    async def lyrics_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NoLyricsFound):
-            message = "No lyrics could be found. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("lyrics: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to change the volume. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to change the volume. "
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is currently playing. "
+        elif isinstance(err, NotDigit):
+            embed.title = "Not a valid volume value. "
+        elif isinstance(err, TooLowVolume):
+            embed.title = "Volume must be higher than 0. "
+        elif isinstance(err, TooHighVolume):
+            embed.title = "Volume must be lower than 200. "
+        else:
+            embed.title = "Unexpected error. "
+            print("volume: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Clear
 
     @commands.command(name="clear", help="Clears the queue. ")
     async def clear_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
 
         if player.queue.is_empty:
             raise QueueIsEmpty
@@ -1131,20 +1093,33 @@ class Music(commands.Cog):
 
     @clear_command.error
     async def clear_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, QueueIsEmpty):
-            message = "The queue is already empty. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently playing. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("clear: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to clear the queue. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to clear the queue. "
+        elif isinstance(err, QueueIsEmpty):
+            embed.title = "The queue is already empty. "
+        else:
+            embed.title = "Unexpected error. "
+            print("clear: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Move
 
     @commands.command(name="move", aliases=["m"], help="Move a song to another spot in the queue. - {m}")
     async def move_command(self, ctx: commands.Context, index, dest):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
+
+        if player.queue.is_empty:
+            raise QueueIsEmpty
 
         if not index.isdigit() or not dest.isdigit():
             raise FaultyIndex
@@ -1194,23 +1169,36 @@ class Music(commands.Cog):
 
     @move_command.error
     async def move_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, commands.MissingRequiredArgument):
-            message = "You need to provide index of the song you want to move and the destination for it. "
-        if isinstance(err, FaultyIndex):
-            message = "You need to provide valid indexes. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently in the queue. "
-        if isinstance(err, SameValue):
-            message = "Dumb to move to the same position :thinking: "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to move songs in the queue. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to move songs in the queue. "
+        elif isinstance(err, commands.MissingRequiredArgument):
+            embed.title = "You need to provide index of the song you want to move and the destination for it. "
+        elif isinstance(err, FaultyIndex):
+            embed.title = "You need to provide valid indexes. "
+        elif isinstance(err, SameValue):
+            embed.title = "Are you sure you want to move to the same position? :thinking: "
+        elif isinstance(err, QueueIsEmpty):
+            embed.title = "The queue is empty. "
+        else:
+            embed.title = "Unexpected error. "
+            print("move: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Cut
 
     @commands.command(name="cut", aliases=["c"], help="Move the last song to the next spot in the queue. - {c}")
     async def cut_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
 
         if player.queue.count < 2:
             raise TooShort
@@ -1223,27 +1211,40 @@ class Music(commands.Cog):
             timestamp=dt.datetime.now(),
             colour=ctx.author.colour
         )
-        embed.title = f"Moved the last song to the next spot in the queue. "
+        embed.title = f"Moved the last song ({track}) to the next spot in the queue. "
 
         await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     @cut_command.error
     async def cut_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently in the queue. "
-        if isinstance(err, TooShort):
-            message = "The queue is too short. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("cut: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to cut the queue. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to cut the queue. "
+        elif isinstance(err, TooShort):
+            embed.title = "The queue is too short. "
+        else:
+            embed.title = "Unexpected error. "
+            print("cut: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Remove
 
     @commands.command(name="remove", aliases=["rm"], help="Remove a song from the queue. - {rm}")
     async def remove_command(self, ctx: commands.Context, index):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
+
+        if player.queue.is_empty:
+            raise QueueIsEmpty
 
         if not index.isdigit():
             raise FaultyIndex
@@ -1255,9 +1256,6 @@ class Music(commands.Cog):
 
         if player.queue.count + 1 < index:
             raise FaultyIndex
-
-        if player.queue.is_empty:
-            raise NothingPlaying
 
         old_queue = player.queue.copy()
         player.queue.clear()
@@ -1281,22 +1279,34 @@ class Music(commands.Cog):
 
     @remove_command.error
     async def remove_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, commands.MissingRequiredArgument):
-            message = "You need to provide the song you want to remove. "
-        if isinstance(err, FaultyIndex):
-            message = "You need to provide a valid index. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is currently in the queue. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("remove: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to remove from the queue. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to remove from the queue. "
+        elif isinstance(err, commands.MissingRequiredArgument):
+            embed.title = "You need to provide teh index of the song you want to remove. "
+        elif isinstance(err, FaultyIndex):
+            embed.title = "You need to provide a valid index. "
+        elif isinstance(err, QueueIsEmpty):
+            embed.title = "The queue is empty. "
+        else:
+            embed.title = "Unexpected error. "
+            print("remove: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Alvin
 
     @commands.command(name="alvin", aliases=["a"], help="Apply a alvin and the chipmunks filter to the song. - {a}")
     async def alvin_command(self, ctx: commands.Context, speed: float = 1.0, pitch: float = 2.0, rate: float = 1.0):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
+        self.check_if_user_connected(ctx)
 
         if not player.is_playing():
             raise NothingPlaying
@@ -1315,20 +1325,29 @@ class Music(commands.Cog):
 
     @alvin_command.error
     async def alvin_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("alvin: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to apply the alvin filter. "
+        elif isinstance(err, NoVoiceChannel):
+            embed.title = "You need to be connected to a voice channel to apply the alvin filter. "
+        elif isinstance(err, NothingPlaying):
+            embed.title = "Nothing is currently playing "
+        else:
+            embed.title = "Unexpected error. "
+            print("alvin: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
     # Autoplay
 
     @commands.command(name="autoplay", aliases=["ap"], help="Toggle autoplay of songs. - {a}")
     async def autoplay_command(self, ctx: commands.Context):
-        player: wavelink.Player = self.check_if_connected(ctx)
+        player: wavelink.Player = self.check_if_player_available(ctx)
 
         player.autoplay = not player.autoplay
 
@@ -1344,13 +1363,18 @@ class Music(commands.Cog):
 
     @autoplay_command.error
     async def autoplay_command_error(self, ctx: commands.Context, err):
-        message = "Error. "
-        if isinstance(err, NothingPlaying):
-            message = "Nothing is playing. "
-        if isinstance(err, NoVoiceChannel):
-            message = "Not connected to a voice channel. "
-        await ctx.message.reply(content=message, delete_after=60, silent=True)
-        print("alvin: ", err)
+        embed = discord.Embed(
+            timestamp=dt.datetime.now(),
+            colour=ctx.author.colour
+        )
+        if isinstance(err, NoPlayerFound):
+            embed.title = "I need to be connected to a voice channel to toggle autoplay. "
+        else:
+            embed.title = "Unexpected error. "
+            print("autoplay: ")
+            print(ctx.message.content)
+            print(err)
+        await ctx.message.reply(embed=embed, delete_after=60, silent=True)
         await ctx.message.delete()
 
 
