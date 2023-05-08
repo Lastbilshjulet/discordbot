@@ -204,7 +204,7 @@ class Music(commands.Cog):
         await ctx.message.delete()
 
     async def connect(self, ctx: commands.Context):
-        channel: discord.VoiceChannel = self.check_if_user_connected()
+        channel: discord.VoiceChannel = self.check_if_user_connected(ctx)
 
         if not ctx.voice_client:
             player: wavelink.Player = await channel.connect(cls=wavelink.Player)
