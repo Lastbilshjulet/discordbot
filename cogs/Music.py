@@ -878,7 +878,7 @@ class Music(commands.Cog):
     # Loop
 
     @commands.command(name="loop", aliases=["repeat"], help="Loops, accepts [song / queue / stop], defaults to stop. - {repeat}")
-    async def loop_command(self, ctx: commands.Context, query: t.Optional[str] = "song"):
+    async def loop_command(self, ctx: commands.Context, query: t.Optional[str] = "stop"):
         player: wavelink.Player = self.check_if_player_available(ctx)
 
         embed = discord.Embed(
