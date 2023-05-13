@@ -303,7 +303,7 @@ class Music(commands.Cog):
     async def play_command(
         self,
         ctx: commands.Context,
-        query: t.Optional[str]
+        *, query: t.Optional[str]
     ):
         player: wavelink.Player = await self.connect(ctx)
 
@@ -400,12 +400,11 @@ class Music(commands.Cog):
             pass
 
         await ctx.send(embed=embed, delete_after=60, silent=True)
-        await ctx.message.delete()
 
     # Search
 
     @commands.command(name="search", aliases=["ps"], help="Search on youtube and get up to 5 options. - {ps}")
-    async def search_command(self, ctx: commands.Context, query: t.Optional[str]):
+    async def search_command(self, ctx: commands.Context, *, query: t.Optional[str]):
         def _check(r, u):
             return (
                 r.emoji in OPTIONS.keys()
@@ -449,6 +448,7 @@ class Music(commands.Cog):
             await message.delete()
             track = tracks[OPTIONS[reaction.emoji]]
             await self.play_track(ctx, track, True)
+            await ctx.message.delete()
 
     @search_command.error
     async def search_command_error(self, ctx: commands.Context, err):
