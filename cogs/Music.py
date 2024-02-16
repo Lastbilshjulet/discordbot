@@ -2,7 +2,6 @@ import datetime as dt
 import re
 import typing as t
 
-import aiohttp
 import discord
 import wavelink
 import asyncio
@@ -113,6 +112,7 @@ class Music(commands.Cog):
                     await player.disconnect()
                     player.cleanup()
                     player.queue.reset()
+                    player.auto_queue.reset()
                     if player.is_playing():
                         await player.stop()
 
@@ -120,6 +120,11 @@ class Music(commands.Cog):
     async def on_wavelink_track_event(self, payload: wavelink.TrackEventPayload):
         print(
             f"{payload.event.name: <5} | guild: {payload.player.guild.name: <11} - {payload.track}")
+
+        if payload.event.name == "unknown_TrackExceptionEvent":
+            payload.player.autoplay = False
+            payload.player.auto_queue.clear()
+            return
 
         if payload.event is not wavelink.TrackEventType.START:
             return
@@ -223,6 +228,7 @@ class Music(commands.Cog):
         await player.disconnect()
         player.cleanup()
         player.queue.reset()
+        player.auto_queue.reset()
         if player.is_playing():
             await player.stop()
 
@@ -351,7 +357,7 @@ class Music(commands.Cog):
         elif isinstance(err, NoSongPlaylistInstead):
             embed.title = "This command only takes singular tracks, if you want to play a playlist use -playlist or -pl. "
         elif isinstance(err, NoSongProvided):
-            embed.title = "No song is was provided. "
+            embed.title = "No song was provided. "
         elif isinstance(err, NoSongFound):
             embed.title = "No song was found. "
         else:
