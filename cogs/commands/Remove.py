@@ -3,12 +3,8 @@ import wavelink
 import discord
 from discord.ext import commands
 
+from .utils.Errors import QueueIsEmpty, FaultyIndex
 from .utils import Common as common
-
-class QueueIsEmpty(commands.CommandError):
-    pass
-class FaultyIndex(commands.CommandError):
-    pass
 
 async def remove(ctx: commands.Context, index):
     player: wavelink.Player = common.get_player(ctx)

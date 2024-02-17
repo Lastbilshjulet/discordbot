@@ -3,16 +3,8 @@ import wavelink
 import discord
 from discord.ext import commands
 
+from .utils.Errors import NothingPlaying, NotDigit, TooLowVolume, TooHighVolume
 from .utils import Common as common
-
-class NothingPlaying(commands.CommandError):
-    pass
-class NotDigit(commands.CommandError):
-    pass
-class TooLowVolume(commands.CommandError):
-    pass
-class TooHighVolume(commands.CommandError):
-    pass
 
 async def volume(ctx: commands.Context, value: str):
     player: wavelink.Player = common.get_player(ctx)

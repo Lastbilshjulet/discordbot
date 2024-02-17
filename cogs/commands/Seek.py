@@ -3,14 +3,8 @@ import wavelink
 import discord
 from discord.ext import commands
 
+from .utils.Errors import NothingPlaying, InvalidTimeString, InvalidPosition
 from .utils import Common as common
-
-class NothingPlaying(commands.CommandError):
-    pass
-class InvalidTimeString(commands.CommandError):
-    pass
-class InvalidPosition(commands.CommandError):
-    pass
 
 async def seek(ctx: commands.Context, position: str):
     player: wavelink.Player = common.get_player(ctx)

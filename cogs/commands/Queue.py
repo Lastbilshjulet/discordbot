@@ -3,14 +3,8 @@ import wavelink
 import discord
 from discord.ext import commands
 
+from .utils.Errors import QueueIsEmpty, NotDigit, TooShort
 from .utils import Common as common
-
-class QueueIsEmpty(commands.CommandError):
-    pass
-class NotDigit(commands.CommandError):
-    pass
-class TooShort(commands.CommandError):
-    pass
 
 async def queue(ctx: commands.Context, show: str):
     player: wavelink.Player = common.get_player(ctx)

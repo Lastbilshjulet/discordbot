@@ -5,9 +5,6 @@ from discord.ext import commands
 
 from .utils import Common as common
 
-class NothingPlaying(commands.CommandError):
-    pass
-
 async def loop(ctx: commands.Context, query: str):
     player: wavelink.Player = common.get_player(ctx)
 

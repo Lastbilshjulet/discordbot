@@ -3,14 +3,10 @@ import wavelink
 from discord.ext import commands
 import discord
 
+from .utils.Errors import NoSongProvided, NoSongFound
 from .utils import Constants as constants
 from .utils import Common as common
 from .Connect import connect
-
-class NoSongProvided(commands.CommandError):
-    pass
-class NoSongsFound(commands.CommandError):
-    pass
 
 #
 #
@@ -26,7 +22,7 @@ async def play(ctx: commands.Context, query) -> None:
     tracks: wavelink.Search = await wavelink.Playable.search(query)
 
     if not tracks:
-        raise NoSongsFound
+        raise NoSongFound
 
     if isinstance(tracks, wavelink.Playlist):
         await player.queue.put_wait(tracks.tracks)
@@ -80,7 +76,7 @@ async def print_play_message(ctx: commands.Context, track: wavelink.Playable):
 async def print_playlist_message(ctx: commands.Context, tracks: wavelink.Playlist):
     embed = discord.Embed(
         colour=ctx.author.colour,
-        timestamp=dt.datetime.utcnow(),
+        timestamp=dt.datetime.now(),
         title=f"Queueing a playlist - {len(tracks)} - {common.format_duration(sum(t.length for t in tracks))}",
         description=f"[{tracks.name}]({tracks.url})"
     )
@@ -113,4 +109,4 @@ async def print_playlist_message(ctx: commands.Context, tracks: wavelink.Playlis
 #
 #
 def log_played_song(ctx: commands.Context, track: wavelink.Playable):
-    print(f"{ctx.guild.name:15} | {ctx.author.nick:10} queued {track.title:30} by {track.author}")
+    print(f"{dt.datetime.now()} | {ctx.guild.name:15} | {ctx.author.nick:10} queued {track.title:30} by {track.author}")

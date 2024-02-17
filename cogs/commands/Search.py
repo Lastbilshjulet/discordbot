@@ -5,17 +5,11 @@ import wavelink
 import asyncio
 from discord.ext import commands
 
+from .utils.Errors import NoSongProvided, NoSongFound, NoSongPlaylistInstead
 from .utils import Constants as constants
 from .utils import Common as common
 from .Play import print_play_message, log_played_song
 from .Connect import connect
-
-class NoSongProvided(commands.CommandError):
-    pass
-class NoSongsFound(commands.CommandError):
-    pass
-class NoSongPlaylistInstead(commands.CommandError):
-    pass
 
 async def search(ctx: commands.Context, query: str, bot: commands.Bot):
     def _check(r, u):
@@ -31,7 +25,7 @@ async def search(ctx: commands.Context, query: str, bot: commands.Bot):
     tracks: wavelink.Search = await wavelink.Playable.search(query)
 
     if not tracks:
-        raise NoSongsFound
+        raise NoSongFound
 
     if isinstance(tracks, wavelink.Playlist):
         raise NoSongPlaylistInstead
@@ -43,7 +37,7 @@ async def search(ctx: commands.Context, query: str, bot: commands.Bot):
                 f"**{i+1}.** {common.format_track_title(t)} ({common.format_duration(t.length)})" for i, t in enumerate(tracks[:5]))
         ),
         colour=ctx.author.colour,
-        timestamp=dt.datetime.utcnow()
+        timestamp=dt.datetime.now()
     )
     embed.set_author(name="Query Results")
     embed.set_footer(text=f"Queried by {ctx.author.display_name}", icon_url=ctx.author.display_avatar)

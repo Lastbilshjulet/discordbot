@@ -5,9 +5,6 @@ from discord.ext import commands
 
 from .utils import Common as common
 
-class NothingPlaying(commands.CommandError):
-    pass
-
 async def autoplay(ctx: commands.Context):
     player: wavelink.Player = common.get_player(ctx)
     

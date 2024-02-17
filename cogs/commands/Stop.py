@@ -3,10 +3,8 @@ import wavelink
 from discord.ext import commands
 import discord
 
+from .utils.Errors import NothingPlaying
 from .utils import Common as common
-
-class NothingPlaying(commands.CommandError):
-    pass
 
 async def stop(ctx: commands.Context):
     player: wavelink.Player = common.get_player(ctx)

@@ -3,16 +3,8 @@ import wavelink
 import discord
 from discord.ext import commands
 
+from .utils.Errors import QueueIsEmpty, FaultyIndex, SameValue, NothingPlaying
 from .utils import Common as common
-
-class QueueIsEmpty(commands.CommandError):
-    pass
-class FaultyIndex(commands.CommandError):
-    pass
-class SameValue(commands.CommandError):
-    pass
-class NothingPlaying(commands.CommandError):
-    pass
 
 async def move(ctx: commands.Context, index, dest):
     player: wavelink.Player = common.get_player(ctx)

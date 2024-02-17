@@ -3,10 +3,8 @@ import wavelink
 import discord
 from discord.ext import commands
 
+from .utils.Errors import TooShort
 from .utils import Common as common
-
-class TooShort(commands.CommandError):
-    pass
 
 async def cut(ctx: commands.Context):
     player: wavelink.Player = common.get_player(ctx)

@@ -1,11 +1,7 @@
 from discord.ext import commands
 import discord
 import wavelink
-
-class NoPlayerFound(commands.CommandError):
-    pass
-class NoVoiceChannel(commands.CommandError):
-    pass
+from .Errors import NoPlayerFound, NoVoiceChannel
 
 def get_player(ctx: commands.Context):
     if not ctx.voice_client:
