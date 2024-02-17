@@ -42,6 +42,7 @@ async def play(ctx: commands.Context, query) -> None:
         player.autoplay = wavelink.AutoPlayMode.enabled
         await player.play(track=track, volume=constants.VOLUME)
         del player.queue[0]
+        await ctx.message.delete()
 
 #
 #

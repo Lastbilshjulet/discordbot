@@ -59,13 +59,13 @@ async def search(ctx: commands.Context, query: str, bot: commands.Bot):
     track = tracks[constants.OPTIONS[reaction.emoji]]
     track: wavelink.Playable = tracks[0]
     await player.queue.put_wait(track)
-    await print_play_message(ctx, track)
+    log_played_song(ctx, track)
 
     if not player.playing:
         player.text_channel = ctx.channel
         player.autoplay = wavelink.AutoPlayMode.enabled
         await player.play(track=track, volume=constants.VOLUME)
-        log_played_song(ctx, track)
         del player.queue[0]
-
-    await ctx.message.delete()
+        await ctx.message.delete()
+    else:
+        await print_play_message(ctx, track)
