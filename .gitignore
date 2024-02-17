@@ -1,11 +1,7 @@
 ### Custom ###
-token.0
-openjdk-13.0.2_windows-x64_bin/
-openjdk-13.0.2_osx-x64_bin/
-openjdk-13.0.2_linux-x64_bin/
-jdk-13.0.2/
 Lavalink.jar
 application.yml
+plugins/
 .env
 
 ### Python ###

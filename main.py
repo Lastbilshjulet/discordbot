@@ -4,7 +4,6 @@ import os
 import discord
 import wavelink
 from discord.ext import commands
-from wavelink.ext import spotify
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -51,11 +50,7 @@ class LabbeBot(commands.Bot):
             uri=LAVALINK_ADDRESS,
             password=LAVALINK_PASS
         )
-        sc = spotify.SpotifyClient(
-            client_id=SPOTIFY_CLIENT_ID,
-            client_secret=SPOTIFY_CLIENT_SECRET
-        )
-        await wavelink.NodePool.connect(client=self, nodes=[node], spotify=sc)
+        await wavelink.Pool.connect(nodes=[node], client=self, cache_capacity=100)
 
     async def on_ready(self):
         self.client_id = (await self.application_info()).id
