@@ -41,7 +41,8 @@ async def print_error_message(ctx: commands.Context, err: commands.CommandError)
     else:
         embed.title = "Unexpected error. "
 
-    print(f"{dt.datetime.now()} | {ctx.guild.name:15} | {ctx.author.nick:10} tried {ctx.message.content:30} and failed with: {err}")
+    print(f"{dt.datetime.now()} | {ctx.guild.name:15} | {ctx.author.nick:20} tried {ctx.message.content:30} and failed with: {embed.title}")
+    print(err)
 
     await ctx.message.reply(embed=embed, delete_after=60, silent=True)
     await ctx.message.delete()

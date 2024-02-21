@@ -110,4 +110,4 @@ async def print_playlist_message(ctx: commands.Context, tracks: wavelink.Playlis
 #
 #
 def log_played_song(ctx: commands.Context, track: wavelink.Playable):
-    print(f"{dt.datetime.now()} | {ctx.guild.name:15} | {ctx.author.nick:10} queued {track.title:30} by {track.author}")
+    print(f"{dt.datetime.now()} | {ctx.guild.name:15} | {ctx.author.nick:20} queued {track.title:30} by {track.author}")
