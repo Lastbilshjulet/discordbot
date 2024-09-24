@@ -26,6 +26,7 @@ from .commands.Move import move
 from .commands.Cut import cut
 from .commands.Remove import remove
 from .commands.Autoplay import autoplay
+from .commands.Gegagedigedagedago import gegagedigedagedago
 
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
@@ -263,6 +264,16 @@ class Music(commands.Cog):
 
     @autoplay_command.error
     async def autoplay_command_error(self, ctx: commands.Context, err):
+        await print_error_message(ctx, err)
+
+    # Gegagedigedagedago
+
+    @commands.command(name="gegagedigedagedago", aliases=["gegag"], help="Play gegagedigedagedago. - {gegag}")
+    async def gegagedigedagedago_command(self, ctx: commands.Context):
+        await gegagedigedagedago(ctx)
+
+    @gegagedigedagedago_command.error
+    async def gegagedigedagedago_command_error(self, ctx: commands.Context, err):
         await print_error_message(ctx, err)
 
 
